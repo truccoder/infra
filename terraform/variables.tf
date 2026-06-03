@@ -47,17 +47,23 @@ variable "instance_shape" {
 variable "instance_ocpus" {
   description = "Number of OCPUs (max 4 for Always Free)"
   type        = number
-  default     = 4
+  default     = 2
 }
 
 variable "instance_memory_gb" {
   description = "Memory in GB (max 24 for Always Free)"
   type        = number
-  default     = 24
+  default     = 12
 }
 
 variable "boot_volume_gb" {
   description = "Boot volume size in GB"
   type        = number
   default     = 100
+}
+
+variable "availability_domain_index" {
+  description = "Index of availability domain to use (try 0, 1, 2 if out of capacity)"
+  type        = number
+  default     = 0
 }
