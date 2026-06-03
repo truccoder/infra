@@ -1,0 +1,28 @@
+:80 {
+	handle /v1/* {
+		reverse_proxy backend:8080
+	}
+
+	handle /peerjs/* {
+		reverse_proxy web-ui:3000
+	}
+
+	handle {
+		reverse_proxy web-ui:3000
+	}
+}
+
+# Uncomment below and comment above :80 block if you have a domain:
+# yourdomain.com {
+# 	handle /v1/* {
+# 		reverse_proxy backend:8080
+# 	}
+#
+# 	handle /peerjs/* {
+# 		reverse_proxy web-ui:3000
+# 	}
+#
+# 	handle {
+# 		reverse_proxy web-ui:3000
+# 	}
+# }
