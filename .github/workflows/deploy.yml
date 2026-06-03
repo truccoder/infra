@@ -1,106 +1,40 @@
-name: Deploy Infrastructure
+name: Deploy Infra Config
 
 on:
   push:
     branches: [main]
+    paths:
+      - "docker/**"
   workflow_dispatch:
 
-concurrency:
-  group: deploy-infra
-  cancel-in-progress: false
-
 jobs:
-  terraform:
-    runs-on: ubuntu-latest
-    outputs:
-      server_ip: ${{ steps.output.outputs.server_ip }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Write OCI private key
-        run: |
-          mkdir -p ~/.oci
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/oci_api_key.pem
-
-      - name: Restore Terraform state
-        uses: actions/cache/restore@v4
-        with:
-          path: terraform/terraform.tfstate
-          key: terraform-state-${{ github.run_id }}
-          restore-keys: terraform-state-
-
-      - name: Terraform Init
-        working-directory: terraform
-        run: terraform init
-
-      - name: Terraform Apply (with retry for capacity)
-        working-directory: terraform
-        run: |
-          for i in 1 2 3 4 5; do
-            echo "==> Attempt $i/5"
-            if terraform apply -auto-approve; then
-              echo "==> Success!"
-              exit 0
-            fi
-            echo "==> Failed, waiting 5 minutes before retry..."
-            sleep 300
-          done
-          echo "==> All attempts failed"
-          exit 1
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key_path: ~/.oci/oci_api_key.pem
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-
-      - name: Save Terraform state
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: terraform/terraform.tfstate
-          key: terraform-state-${{ github.run_id }}
-
-      - name: Get server IP
-        id: output
-        working-directory: terraform
-        run: echo "server_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
-
   deploy:
-    needs: terraform
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Wait for cloud-init
+      - name: Install Docker on server (first run only)
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ needs.terraform.outputs.server_ip }}
-          username: ubuntu
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          command_timeout: 5m
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            cloud-init status --wait || true
+            if ! command -v docker &> /dev/null; then
+              curl -fsSL https://get.docker.com | sh
+              sudo usermod -aG docker $USER
+            fi
             sudo mkdir -p /opt/socialapp
-            sudo chown $(whoami):$(whoami) /opt/socialapp
+            sudo chown $USER:$USER /opt/socialapp
 
       - name: Upload configs to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ needs.terraform.outputs.server_ip }}
-          username: ubuntu
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
           source: "docker/docker-compose.prod.yml,docker/Caddyfile"
           target: /opt/socialapp
           strip_components: 1
@@ -108,9 +42,9 @@ jobs:
       - name: Start services
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ needs.terraform.outputs.server_ip }}
-          username: ubuntu
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             cd /opt/socialapp
             docker compose -f docker-compose.prod.yml up -d
