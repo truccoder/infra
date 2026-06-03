@@ -24,8 +24,13 @@ variable "region" {
 }
 
 variable "compartment_ocid" {
-  description = "OCI Compartment OCID"
+  description = "OCI Compartment OCID (defaults to tenancy root)"
   type        = string
+  default     = ""
+}
+
+locals {
+  compartment_ocid = var.compartment_ocid != "" ? var.compartment_ocid : var.tenancy_ocid
 }
 
 variable "ssh_public_key" {

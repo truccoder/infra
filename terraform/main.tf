@@ -24,7 +24,7 @@ data "oci_identity_availability_domains" "ads" {
 }
 
 data "oci_core_images" "ubuntu" {
-  compartment_id           = var.compartment_ocid
+  compartment_id           = local.compartment_ocid
   operating_system         = "Canonical Ubuntu"
   operating_system_version = "22.04"
   shape                    = var.instance_shape

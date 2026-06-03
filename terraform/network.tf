@@ -1,19 +1,19 @@
 resource "oci_core_vcn" "main" {
-  compartment_id = var.compartment_ocid
+  compartment_id = local.compartment_ocid
   cidr_blocks    = ["10.0.0.0/16"]
   display_name   = "socialapp-vcn"
   dns_label      = "socialapp"
 }
 
 resource "oci_core_internet_gateway" "main" {
-  compartment_id = var.compartment_ocid
+  compartment_id = local.compartment_ocid
   vcn_id         = oci_core_vcn.main.id
   display_name   = "socialapp-igw"
   enabled        = true
 }
 
 resource "oci_core_route_table" "public" {
-  compartment_id = var.compartment_ocid
+  compartment_id = local.compartment_ocid
   vcn_id         = oci_core_vcn.main.id
   display_name   = "socialapp-public-rt"
 
@@ -25,7 +25,7 @@ resource "oci_core_route_table" "public" {
 }
 
 resource "oci_core_security_list" "public" {
-  compartment_id = var.compartment_ocid
+  compartment_id = local.compartment_ocid
   vcn_id         = oci_core_vcn.main.id
   display_name   = "socialapp-public-sl"
 
@@ -67,7 +67,7 @@ resource "oci_core_security_list" "public" {
 }
 
 resource "oci_core_subnet" "public" {
-  compartment_id             = var.compartment_ocid
+  compartment_id             = local.compartment_ocid
   vcn_id                     = oci_core_vcn.main.id
   cidr_block                 = "10.0.1.0/24"
   display_name               = "socialapp-public-subnet"
