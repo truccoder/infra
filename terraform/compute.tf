@@ -1,5 +1,5 @@
 resource "oci_core_instance" "app" {
-  compartment_id      = var.compartment_ocid
+  compartment_id      = local.compartment_ocid
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
   display_name        = "socialapp-server"
   shape               = var.instance_shape
