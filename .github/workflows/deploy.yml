@@ -41,9 +41,20 @@ jobs:
         working-directory: terraform
         run: terraform init
 
-      - name: Terraform Apply
+      - name: Terraform Apply (with retry for capacity)
         working-directory: terraform
-        run: terraform apply -auto-approve
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "==> Attempt $i/5"
+            if terraform apply -auto-approve; then
+              echo "==> Success!"
+              exit 0
+            fi
+            echo "==> Failed, waiting 5 minutes before retry..."
+            sleep 300
+          done
+          echo "==> All attempts failed"
+          exit 1
         env:
           TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
           TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
