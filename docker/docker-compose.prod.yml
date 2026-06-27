@@ -24,6 +24,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       AXIOM_TOKEN: ${AXIOM_TOKEN}
+      AXIOM_DATASET: ${AXIOM_DATASET}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/socialapp
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
