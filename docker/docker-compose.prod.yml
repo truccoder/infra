@@ -25,8 +25,8 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       AXIOM_TOKEN: ${AXIOM_TOKEN}
       AXIOM_DATASET: ${AXIOM_DATASET}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db.rjauctcerrnmacrhaixx.supabase.co:5432/postgres
-      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:5432/postgres?user=postgres.rjauctcerrnmacrhaixx&password=${DB_PASSWORD}&sslmode=require
+      SPRING_DATASOURCE_USERNAME: postgres.rjauctcerrnmacrhaixx
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
