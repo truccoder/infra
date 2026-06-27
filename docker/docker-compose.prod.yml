@@ -19,7 +19,11 @@ services:
   # ─── Application Services ───
   backend:
     image: ghcr.io/truccoder/backend:latest
+    env_file:
+      - .env
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      AXIOM_TOKEN: ${AXIOM_TOKEN}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/socialapp
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
