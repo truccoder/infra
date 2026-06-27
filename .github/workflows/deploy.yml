@@ -51,6 +51,10 @@ jobs:
             echo "AXIOM_TOKEN=${{ secrets.AXIOM_TOKEN }}" >> .env
             echo "AXIOM_DATASET=${{ secrets.AXIOM_DATASET }}" >> .env
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+            echo "MAIL_HOST=${{ secrets.MAIL_HOST }}" >> .env
+            echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}" >> .env
+            echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> .env
+            echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> .env
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u truccoder --password-stdin
             docker compose -f docker-compose.prod.yml pull backend
             docker compose -f docker-compose.prod.yml up -d

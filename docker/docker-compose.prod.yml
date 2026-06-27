@@ -25,6 +25,10 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       AXIOM_TOKEN: ${AXIOM_TOKEN}
       AXIOM_DATASET: ${AXIOM_DATASET}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
       SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:5432/postgres?user=postgres.rjauctcerrnmacrhaixx&password=${DB_PASSWORD}&sslmode=require
       SPRING_DATASOURCE_USERNAME: postgres.rjauctcerrnmacrhaixx
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
