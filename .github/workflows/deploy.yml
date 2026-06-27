@@ -50,5 +50,7 @@ jobs:
             echo "SPRING_PROFILES_ACTIVE=${{ secrets.SPRING_PROFILES_ACTIVE }}" > .env
             echo "AXIOM_TOKEN=${{ secrets.AXIOM_TOKEN }}" >> .env
             echo "AXIOM_DATASET=${{ secrets.AXIOM_DATASET }}" >> .env
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u truccoder --password-stdin
+            docker compose -f docker-compose.prod.yml pull backend
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
