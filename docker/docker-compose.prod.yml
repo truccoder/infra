@@ -25,9 +25,9 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       AXIOM_TOKEN: ${AXIOM_TOKEN}
       AXIOM_DATASET: ${AXIOM_DATASET}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/socialapp
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db.rjauctcerrnmacrhaixx.supabase.co:5432/postgres
       SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_NEO4J_URI: bolt://neo4j:7687
@@ -40,7 +40,6 @@ services:
       MINIO_ACCESS_KEY: minio_admin
       MINIO_SECRET_KEY: minio_admin_password
     depends_on:
-      - postgres
       - redis
       - neo4j
       - opensearch
@@ -53,19 +52,6 @@ services:
     image: ghcr.io/truccoder/web-ui:latest
     environment:
       NEXT_PUBLIC_USE_MOCK: "false"
-    restart: always
-    networks:
-      - app-network
-
-  # ─── Infrastructure Services ───
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: socialapp
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     restart: always
     networks:
       - app-network
@@ -121,7 +107,6 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  postgres_data:
   redis_data:
   neo4j_data:
   opensearch_data:
