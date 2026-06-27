@@ -29,6 +29,8 @@ services:
       MAIL_PORT: ${MAIL_PORT}
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      RESET_PASSWORD_URL: http://14.225.217.4/reset-password?token=
       SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:5432/postgres?user=postgres.rjauctcerrnmacrhaixx&password=${DB_PASSWORD}&sslmode=require
       SPRING_DATASOURCE_USERNAME: postgres.rjauctcerrnmacrhaixx
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
