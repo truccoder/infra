@@ -62,6 +62,10 @@ services:
     image: ghcr.io/truccoder/web-ui:latest
     environment:
       NEXT_PUBLIC_USE_MOCK: "false"
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
+      TWILIO_API_KEY_SECRET: ${TWILIO_API_KEY_SECRET}
+      TWILIO_CONVERSATIONS_SERVICE_SID: ${TWILIO_CONVERSATIONS_SERVICE_SID}
     restart: always
     networks:
       - app-network
