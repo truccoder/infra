@@ -31,6 +31,9 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       RESET_PASSWORD_URL: http://14.225.217.4/reset-password?token=
+      VERIFY_EMAIL_URL: http://14.225.217.4/verify-email?token=
+      MAGIC_LINK_URL: http://14.225.217.4/magic-login?token=
+      CORS_ALLOWED_ORIGINS: http://14.225.217.4
       SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:5432/postgres?user=postgres.rjauctcerrnmacrhaixx&password=${DB_PASSWORD}&sslmode=require
       SPRING_DATASOURCE_USERNAME: postgres.rjauctcerrnmacrhaixx
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
@@ -39,16 +42,17 @@ services:
       SPRING_NEO4J_URI: bolt://neo4j:7687
       SPRING_NEO4J_AUTHENTICATION_USERNAME: neo4j
       SPRING_NEO4J_AUTHENTICATION_PASSWORD: neo4j_password
-      OPENSEARCH_HOST: opensearch
-      OPENSEARCH_PORT: 9200
-      OPENSEARCH_SCHEME: http
-      MINIO_URL: http://minio:9000
+      # MinIO must be reached at the SAME address the backend uses to sign presigned URLs,
+      # because that address gets baked into t_users.profile_picture_url / t_books.cover_image_url
+      # and served to real browsers — "minio" (Docker-internal DNS) would be unreachable from them.
+      MINIO_URL: http://14.225.217.4:9000
       MINIO_ACCESS_KEY: minio_admin
       MINIO_SECRET_KEY: minio_admin_password
+      MOMO_REDIRECT_URL: http://14.225.217.4/payment/success
+      MOMO_IPN_URL: http://14.225.217.4/v1/api/payments/momo/webhook
     depends_on:
       - redis
       - neo4j
-      - opensearch
       - minio
     restart: always
     networks:
@@ -86,24 +90,14 @@ services:
     networks:
       - app-network
 
-  opensearch:
-    image: opensearchproject/opensearch:2.13.0
-    environment:
-      discovery.type: single-node
-      DISABLE_SECURITY_PLUGIN: "true"
-      OPENSEARCH_JAVA_OPTS: "-Xms256m -Xmx256m"
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    restart: always
-    networks:
-      - app-network
-
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio_admin
       MINIO_ROOT_PASSWORD: minio_admin_password
+    ports:
+      - "9000:9000"
     volumes:
       - minio_data:/data
     restart: always
@@ -115,7 +109,6 @@ volumes:
   caddy_config:
   redis_data:
   neo4j_data:
-  opensearch_data:
   minio_data:
 
 networks:
