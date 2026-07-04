@@ -56,7 +56,11 @@ jobs:
             echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> .env
             echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> .env
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+            echo "TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}" >> .env
+            echo "TWILIO_API_KEY_SID=${{ secrets.TWILIO_API_KEY_SID }}" >> .env
+            echo "TWILIO_API_KEY_SECRET=${{ secrets.TWILIO_API_KEY_SECRET }}" >> .env
+            echo "TWILIO_CONVERSATIONS_SERVICE_SID=${{ secrets.TWILIO_CONVERSATIONS_SERVICE_SID }}" >> .env
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u truccoder --password-stdin
-            docker compose -f docker-compose.prod.yml pull backend
+            docker compose -f docker-compose.prod.yml pull backend web-ui
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
