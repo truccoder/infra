@@ -29,7 +29,14 @@ services:
       MAIL_PORT: ${MAIL_PORT}
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM_EMAIL: ${MAIL_USERNAME}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-SocialApp}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # No default in application.yml — the backend refuses to start without it.
+      JWT_SECRET: ${JWT_SECRET}
+      # The OpenAPI spec enumerates every endpoint and DTO field, and Swagger UI is a live
+      # request console — both stay off in production (see application.yml).
+      SPRINGDOC_ENABLED: "false"
       RESET_PASSWORD_URL: http://14.225.217.4/reset-password?token=
       VERIFY_EMAIL_URL: http://14.225.217.4/verify-email?token=
       MAGIC_LINK_URL: http://14.225.217.4/magic-login?token=
@@ -48,6 +55,32 @@ services:
       MINIO_URL: http://14.225.217.4:9000
       MINIO_ACCESS_KEY: minio_admin
       MINIO_SECRET_KEY: minio_admin_password
+      # OAuth / Google Calendar. The callback the *browser* is redirected to lives on the
+      # web-ui (/oauth/*); the Calendar callback is consumed by the backend itself, so it
+      # goes through Caddy's /v1/* route. Both must be registered verbatim in the Google /
+      # GitHub app consoles.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
+      GOOGLE_OAUTH_REDIRECT_URI: http://14.225.217.4/oauth/google/callback
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET}
+      GITHUB_OAUTH_REDIRECT_URI: http://14.225.217.4/oauth/github/callback
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET}
+      GOOGLE_CALENDAR_REDIRECT_URI: http://14.225.217.4/v1/api/events/google/callback
+      # The web-ui talks to Stream Chat directly with the token GET /v1/api/chat/token issues,
+      # so the backend needs the real credentials — an empty key makes chat unusable.
+      STREAM_API_KEY: ${STREAM_API_KEY}
+      STREAM_API_SECRET: ${STREAM_API_SECRET}
+      # Payments are a demo on this deployment, not a live checkout: these are MoMo's own
+      # publicly published sandbox credentials (github.com/momo-wallet/payment), spelled out
+      # here rather than left to application.yml's defaults so it is visible from the compose
+      # file alone that production is pointed at test-payment.momo.vn and takes no real money.
+      # Replace all four with a real merchant's values — via .env, not in git — to go live.
+      MOMO_PARTNER_CODE: MOMO
+      MOMO_ACCESS_KEY: F8BBA842ECF85
+      MOMO_SECRET_KEY: K951B6PE1waDMi640xX08PD3vg6EkVlz
+      MOMO_API_URL: https://test-payment.momo.vn
       MOMO_REDIRECT_URL: http://14.225.217.4/payment/success
       MOMO_IPN_URL: http://14.225.217.4/v1/api/payments/momo/webhook
     depends_on:
