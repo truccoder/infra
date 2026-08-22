@@ -1,0 +1,6 @@
+# backup.sh được scp sang máy chủ Linux rồi chạy bằng bash. Nếu ai đó sửa file trên Windows và
+# commit với đầu dòng CRLF, shebang thành `#!/usr/bin/env bash` và Linux báo "not found" —
+# thông báo trỏ vào một file đang nằm sờ sờ ở đó, rất dễ đi tìm nhầm hướng.
+# (Repo backend đã dính đúng lỗi này với gradlew trong `docker build`.)
+*.sh  text eol=lf
+*.sql text eol=lf

@@ -1,7 +1,49 @@
 services:
+  # Ngân sách bộ nhớ cho VPS 4 GB (Vietnix Cheap 2, 2 vCPU / 4 GB).
+  #
+  #   caddy    96m + backend 1024m + web-ui 448m + redis 192m + neo4j 640m + minio 384m = 2784m
+  #
+  # Còn lại khoảng 1.2 GB cho hệ điều hành và page cache. Trước đây KHÔNG service nào có giới hạn,
+  # nghĩa là cả sáu đều tưởng mình được dùng trọn 4 GB; khi cộng lại vượt quá thì OOM-killer của
+  # nhân hệ điều hành chọn nạn nhân theo điểm số của nó, thường là tiến trình lớn nhất — tức là
+  # backend — và container biến mất mà không để lại stack trace nào.
+  #
+  # Con số của backend gắn với -XX:MaxRAMPercentage=75.0 trong Dockerfile: 1024m × 75% = 768m heap,
+  # phần còn lại dành cho metaspace, stack luồng và bộ đệm trực tiếp. Sửa mem_limit ở đây là heap
+  # tự đổi theo, không phải chỉnh hai chỗ.
+
   # ─── Reverse Proxy ───
   caddy:
     image: caddy:2-alpine
+    mem_limit: 96m
+    # Caddyfile đọc {$PUBLIC_DOMAIN} từ môi trường của CHÍNH tiến trình caddy, không phải từ phép
+    # thay biến của Compose. Không truyền vào đây thì đặt PUBLIC_DOMAIN trong .env sẽ không có tác
+    # dụng gì — Caddy lặng lẽ dùng giá trị mặc định `:80` và không báo lỗi, nên sẽ trông như
+    # "đã bật domain rồi mà vẫn chạy HTTP".
+    #
+    # ⚠️ `:-:80`, KHÔNG phải `:-`. Chính chỗ này làm sập production ngày 2026-08-22.
+    #
+    # Caddyfile khai báo `{$PUBLIC_DOMAIN::80}` với ý "trống thì nghe :80". Nhưng giá trị mặc định
+    # của Caddy CHỈ áp dụng khi biến KHÔNG TỒN TẠI. Biến tồn tại nhưng rỗng thì Caddy thay vào
+    # đúng chuỗi rỗng — và `${PUBLIC_DOMAIN:-}` ở đây luôn TẠO RA biến đó với giá trị rỗng.
+    #
+    # Dòng địa chỉ site vì thế rút lại còn mỗi ` {`, mà một Caddyfile mở đầu bằng `{` được hiểu là
+    # khối global options. Chỉ thị đầu tiên bên trong lập tức sai ngữ cảnh:
+    #
+    #   Error: adapting config using caddyfile: /etc/caddy/Caddyfile:21: unrecognized global option: handle
+    #
+    # Caddy thoát, `restart: always` bật lại, lặp vô hạn — nghĩa là KHÔNG AI nghe cổng 80 và trình
+    # duyệt báo ERR_CONNECTION_REFUSED. Năm service còn lại vẫn khỏe, `docker compose up -d` vẫn
+    # thành công, nên nhìn từ ngoài rất giống lỗi mạng hoặc tường lửa.
+    #
+    # `${PUBLIC_DOMAIN:-:80}` vá đúng chỗ: `:-` của Compose coi rỗng NHƯ LÀ chưa đặt — khác hẳn
+    # Caddy — nên container luôn nhận một địa chỉ site hợp lệ. Đặt domain vào .env thì nó vẫn
+    # thắng như cũ. Đã kiểm chứng bằng `caddy validate` ở cả ba trường hợp: rỗng, `:80`, domain.
+    environment:
+      PUBLIC_DOMAIN: "${PUBLIC_DOMAIN:-:80}"
+      # Chỉ dùng khi bỏ comment khối MinIO trong Caddyfile. Khai sẵn để lúc đó không vấp lại đúng
+      # cái bẫy vừa nói ở trên.
+      MINIO_PUBLIC_DOMAIN: ${MINIO_PUBLIC_DOMAIN:-}
     ports:
       - "80:80"
       - "443:443"
@@ -10,8 +52,13 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - backend
-      - web-ui
+      # service_healthy, không phải depends_on trần. Dạng trần chỉ đợi container được TẠO, mà
+      # backend cần khoảng một phút để Flyway chạy hết 44 migration và Spring nạp xong context —
+      # trong khoảng đó Caddy đã nhận request và trả 502 cho mọi người vào trang.
+      backend:
+        condition: service_healthy
+      web-ui:
+        condition: service_started
     restart: always
     networks:
       - app-network
@@ -19,6 +66,7 @@ services:
   # ─── Application Services ───
   backend:
     image: ghcr.io/truccoder/backend:latest
+    mem_limit: 1024m
     env_file:
       - .env
     environment:
@@ -37,10 +85,32 @@ services:
       # The OpenAPI spec enumerates every endpoint and DTO field, and Swagger UI is a live
       # request console — both stay off in production (see application.yml).
       SPRINGDOC_ENABLED: "false"
-      RESET_PASSWORD_URL: http://14.225.217.4/reset-password?token=
-      VERIFY_EMAIL_URL: http://14.225.217.4/verify-email?token=
-      MAGIC_LINK_URL: http://14.225.217.4/magic-login?token=
-      CORS_ALLOWED_ORIGINS: http://14.225.217.4
+      # Content moderation. application.yml already defaults this on; stated here so that "is
+      # production moderating posts?" is answerable from the compose file without going and
+      # reading the image's defaults. Never set this to false here.
+      MODERATION_ENABLED: "true"
+      # Production CÓ nạp dữ liệu demo (quyết định 2026-08-21).
+      #
+      # KHÔNG bao giờ thêm `classpath:db/seed-dev` vào đây. Thư mục đó chứa personal access token
+      # dùng được ngay cho /v1/api/knowledge/sync/**, tức là credential thật.
+      #
+      # Mật khẩu của 60 tài khoản seed được GHI CỨNG trong V51__seed_users.sql, không đến từ biến
+      # môi trường nào (quyết định 2026-08-21: chấp nhận để khỏi quản lý thêm secret). Nghĩa là
+      # mật khẩu ADMIN của môi trường này nằm công khai trong repo backend — xem chính file đó.
+      FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/seed
+      # Guest rate limiting counts per client IP. Behind Caddy, every request arrives from the
+      # proxy's container address, so with this off the ENTIRE anonymous internet shares one
+      # 60-requests-per-minute bucket — real visitors get 429s while a crawler is never isolated.
+      #
+      # Safe to trust the header here specifically: Caddy's reverse_proxy overwrites
+      # X-Forwarded-For rather than appending to a client-supplied value, and the backend
+      # publishes no port of its own, so Caddy is the only path in. Both facts have to stay true
+      # for this to remain correct — do not publish backend ports.
+      GUEST_RATE_LIMIT_TRUST_XFF: "true"
+      RESET_PASSWORD_URL: ${PUBLIC_BASE_URL}/reset-password?token=
+      VERIFY_EMAIL_URL: ${PUBLIC_BASE_URL}/verify-email?token=
+      MAGIC_LINK_URL: ${PUBLIC_BASE_URL}/magic-login?token=
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_BASE_URL}
       SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:5432/postgres?user=postgres.rjauctcerrnmacrhaixx&password=${DB_PASSWORD}&sslmode=require
       SPRING_DATASOURCE_USERNAME: postgres.rjauctcerrnmacrhaixx
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
@@ -48,51 +118,98 @@ services:
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_NEO4J_URI: bolt://neo4j:7687
       SPRING_NEO4J_AUTHENTICATION_USERNAME: neo4j
-      SPRING_NEO4J_AUTHENTICATION_PASSWORD: neo4j_password
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: ${NEO4J_PASSWORD}
       # MinIO must be reached at the SAME address the backend uses to sign presigned URLs,
       # because that address gets baked into t_users.profile_picture_url / t_books.cover_image_url
       # and served to real browsers — "minio" (Docker-internal DNS) would be unreachable from them.
-      MINIO_URL: http://14.225.217.4:9000
-      MINIO_ACCESS_KEY: minio_admin
-      MINIO_SECRET_KEY: minio_admin_password
+      MINIO_URL: ${MINIO_PUBLIC_URL}
+      # The backend authenticates to MinIO as root, so these are the same two values the minio
+      # service below is started with. They were literal defaults in this file until 2026-08-18 —
+      # published credentials on a port open to the internet, i.e. read/write/delete on every
+      # avatar, book cover and preview file. Now .env-only; see .env.example.
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       # OAuth / Google Calendar. The callback the *browser* is redirected to lives on the
       # web-ui (/oauth/*); the Calendar callback is consumed by the backend itself, so it
       # goes through Caddy's /v1/* route. Both must be registered verbatim in the Google /
       # GitHub app consoles.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
-      GOOGLE_OAUTH_REDIRECT_URI: http://14.225.217.4/oauth/google/callback
+      GOOGLE_OAUTH_REDIRECT_URI: ${PUBLIC_BASE_URL}/oauth/google/callback
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET}
-      GITHUB_OAUTH_REDIRECT_URI: http://14.225.217.4/oauth/github/callback
+      GITHUB_OAUTH_REDIRECT_URI: ${PUBLIC_BASE_URL}/oauth/github/callback
+      # Route RIÊNG cho luồng "liên kết GitHub vào tài khoản đang đăng nhập", khác hẳn route đăng
+      # nhập ở trên. Code GitHub chỉ dùng được một lần, nên nếu hai luồng chung một callback thì
+      # handler đăng nhập tiêu mất code mà luồng liên kết đang cần — đó chính là bug B23a.
+      #
+      # Biến này bị BỎ SÓT cho tới 2026-08-21: production rơi về mặc định dành cho máy dev là
+      # http://localhost:3000/settings/github/callback, nên bấm "liên kết GitHub" trên production
+      # đá trình duyệt người dùng về localhost. Không có lỗi nào trong log backend vì backend
+      # không phải bên thực hiện việc chuyển hướng đó.
+      #
+      # Phải đăng ký thêm URI này trong GitHub OAuth App, bên cạnh URI đăng nhập.
+      GITHUB_OAUTH_LINK_REDIRECT_URI: ${PUBLIC_BASE_URL}/settings/github/callback
       GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET}
-      GOOGLE_CALENDAR_REDIRECT_URI: http://14.225.217.4/v1/api/events/google/callback
+      GOOGLE_CALENDAR_REDIRECT_URI: ${PUBLIC_BASE_URL}/v1/api/events/google/callback
       # The web-ui talks to Stream Chat directly with the token GET /v1/api/chat/token issues,
       # so the backend needs the real credentials — an empty key makes chat unusable.
       STREAM_API_KEY: ${STREAM_API_KEY}
       STREAM_API_SECRET: ${STREAM_API_SECRET}
-      # Payments are a demo on this deployment, not a live checkout: these are MoMo's own
-      # publicly published sandbox credentials (github.com/momo-wallet/payment), spelled out
-      # here rather than left to application.yml's defaults so it is visible from the compose
-      # file alone that production is pointed at test-payment.momo.vn and takes no real money.
-      # Replace all four with a real merchant's values — via .env, not in git — to go live.
-      MOMO_PARTNER_CODE: MOMO
-      MOMO_ACCESS_KEY: F8BBA842ECF85
-      MOMO_SECRET_KEY: K951B6PE1waDMi640xX08PD3vg6EkVlz
-      MOMO_API_URL: https://test-payment.momo.vn
-      MOMO_REDIRECT_URL: http://14.225.217.4/payment/success
-      MOMO_IPN_URL: http://14.225.217.4/v1/api/payments/momo/webhook
+      # Push notification (OneSignal). Bị BỎ SÓT hoàn toàn cho tới 2026-08-22: không có ở đây,
+      # ở .env.example, lẫn ở deploy.yml, nên application.yml rơi về default rỗng.
+      #
+      # Cách hỏng rất khó thấy: PushNotificationService dựng WebClient với header
+      # `Authorization: Basic null` rồi gọi Map.of("app_id", null, ...) — NPE, nhưng nằm trong
+      # try/catch nên chỉ để lại một dòng log.error. Không có ngoại lệ nào nổi lên tới API, và
+      # thông báo trong ứng dụng qua SSE vẫn chạy bình thường, nên nhìn từ ngoài mọi thứ trông
+      # như đang hoạt động trong khi KHÔNG có push nào rời khỏi máy chủ.
+      #
+      # Để trống là hợp lệ và đúng ý nếu chưa đăng ký OneSignal — chỉ mất push, phần còn lại của
+      # hệ thống thông báo không phụ thuộc vào nó.
+      ONESIGNAL_APP_ID: ${ONESIGNAL_APP_ID:-}
+      ONESIGNAL_REST_API_KEY: ${ONESIGNAL_REST_API_KEY:-}
+      # ⚠️ THANH TOÁN LÀ DEMO — QUYẾT ĐỊNH CHÍNH THỨC 2026-08-18, GIỮ SANDBOX.
+      #
+      # Bốn giá trị dưới đây là credential sandbox MoMo tự công bố
+      # (github.com/momo-wallet/payment). Ghi thẳng ở đây thay vì để mặc định trong
+      # application.yml, để nhìn riêng file compose là biết ngay production đang trỏ vào
+      # test-payment.momo.vn và KHÔNG nhận đồng tiền thật nào.
+      #
+      # Hệ quả cần nhớ khi cho người ngoài đội dùng thử: bấm "mua sách" vẫn hiện giao dịch thành
+      # công và tải được sách, nhưng không có tiền nào được chuyển. Phải nói rõ đó là demo.
+      #
+      # Phía code đã sẵn sàng cho merchant thật — chữ ký IPN được verify và webhook xử lý
+      # idempotent (MomoService.handleWebhook / applyResult), đã rà ngày 2026-08-18. Muốn lên
+      # thật thì chỉ thay bốn giá trị này qua .env, không phải sửa code.
+      #
+      # Bốn dòng dưới là LITERAL cho tới 2026-08-22, và `environment:` thắng `env_file:` trong
+      # Compose — nghĩa là đặt MOMO_PARTNER_CODE vào .env sẽ bị nuốt im lặng, đúng ngược với
+      # điều đoạn ghi chú ngay trên vừa hứa. Dạng ${VAR:-default} giữ nguyên hành vi mặc định
+      # (không có .env thì vẫn là sandbox MoMo) nhưng .env override được thật.
+      MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-MOMO}
+      MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-F8BBA842ECF85}
+      MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-K951B6PE1waDMi640xX08PD3vg6EkVlz}
+      MOMO_API_URL: ${MOMO_API_URL:-https://test-payment.momo.vn}
+      MOMO_REDIRECT_URL: ${PUBLIC_BASE_URL}/payment/success
+      MOMO_IPN_URL: ${PUBLIC_BASE_URL}/v1/api/payments/momo/webhook
     depends_on:
-      - redis
-      - neo4j
-      - minio
+      # Redis và Neo4j phải thực sự trả lời được trước khi backend khởi động, không chỉ là
+      # "container đã được tạo". Postgres không có ở đây vì nó nằm ở Supabase, ngoài compose này.
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     restart: always
     networks:
       - app-network
 
   web-ui:
     image: ghcr.io/truccoder/web-ui:latest
+    mem_limit: 448m
     environment:
       NEXT_PUBLIC_USE_MOCK: "false"
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
@@ -105,17 +222,54 @@ services:
 
   redis:
     image: redis:7-alpine
+    mem_limit: 192m
     command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: always
     networks:
       - app-network
 
   neo4j:
     image: neo4j:5.20
+    mem_limit: 640m
     environment:
-      NEO4J_AUTH: neo4j/neo4j_password
+      # Not published to the host, so this was never reachable from the internet — but it is the
+      # store of record for the friendship graph, and "neo4j_password" was a default sitting in a
+      # git repo. Anything that reaches the docker network gets the whole social graph with it.
+      #
+      # ⚠️ BIẾN NÀY CHỈ CÓ TÁC DỤNG LẦN ĐẦU, khi volume neo4j_data còn trống.
+      #
+      # Với volume đã có dữ liệu, Neo4j đọc mật khẩu từ /data/dbms/auth.ini và BỎ QUA biến này. Nó
+      # không báo lỗi, chỉ ghi đúng một dòng log dễ trôi qua:
+      #
+      #   Changed password for user 'neo4j'. IMPORTANT: this change will only take effect if
+      #   performed before the database is started for the first time.
+      #
+      # Nghĩa là ĐỔI NEO4J_PASSWORD KHÔNG ĐỦ để đổi mật khẩu của một Neo4j đang chạy. Volume trên
+      # máy chủ được khởi tạo bằng "neo4j_password" — giá trị mặc định ghi cứng trong chính file
+      # này cho tới 2026-08-18 — nên khi biến chuyển sang secret thì healthcheck bên dưới đăng nhập
+      # bằng mật khẩu mới và trượt VĨNH VIỄN, đồng thời backend cũng không kết nối được Bolt.
+      #
+      # Đây là bẫy tiềm ẩn cho lần xoay secret TỚI, không phải nguyên nhân sự cố 2026-08-22 (sự cố
+      # đó là Caddyfile — xem ghi chú ở service caddy). Hệ quả nếu vấp phải: backend không mở được
+      # Bolt và không bao giờ khởi động, trong khi log Neo4j vẫn báo "Started." hoàn toàn bình thường.
+      #
+      # Muốn xoay mật khẩu thì phải đổi trong chính cơ sở dữ liệu, dữ liệu giữ nguyên:
+      #
+      #   NEW=$(grep -m1 '^NEO4J_PASSWORD=' .env | cut -d= -f2-)
+      #   docker compose -f docker-compose.prod.yml exec -T neo4j       #     cypher-shell -u neo4j -p '<mật-khẩu-cũ>' -d system       #     "ALTER CURRENT USER SET PASSWORD FROM '<mật-khẩu-cũ>' TO '$NEW'"
+      #
+      # Đã kiểm chứng trên neo4j:5.20 Community ngày 2026-08-22: lệnh chạy được, dữ liệu còn
+      # nguyên, mật khẩu mới sống qua restart. Phải là ALTER CURRENT USER — ALTER USER cần
+      # Enterprise. Xoá volume cũng "sửa" được, nhưng mất toàn bộ đồ thị quan hệ bạn bè.
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_server_memory_heap_initial__size: 256m
@@ -123,17 +277,55 @@ services:
       NEO4J_server_memory_pagecache_size: 128m
     volumes:
       - neo4j_data:/data
+    healthcheck:
+      # Chạy hẳn một câu truy vấn, không chỉ kiểm tra cổng: Neo4j từ chối kết nối Bolt trong vài
+      # giây sau khi tiến trình đã lên, nên "cổng đang mở" không đồng nghĩa với "trả lời được".
+      #
+      # Mật khẩu dùng `${...}` một dấu $ — Compose thay giá trị từ .env ngay lúc đọc file, chứ
+      # KHÔNG phải `$$` để container tự tra biến môi trường.
+      #
+      # Lý do: entrypoint của Neo4j coi mọi biến bắt đầu bằng NEO4J_ là một setting trong
+      # neo4j.conf. Thêm `NEO4J_PASSWORD` vào environment làm nó báo "Unrecognized setting. No
+      # declared setting with name: PASSWORD" rồi thoát — container vào vòng lặp khởi động lại và
+      # không bao giờ lên được. Đã thử và dính đúng lỗi này.
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"${NEO4J_PASSWORD}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
     restart: always
     networks:
       - app-network
 
   minio:
     image: minio/minio
+    mem_limit: 384m
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minio_admin
-      MINIO_ROOT_PASSWORD: minio_admin_password
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    healthcheck:
+      # /minio/health/live là endpoint sẵn có của MinIO, không cần xác thực. curl có trong image.
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     ports:
+      # Port 9000 stays open on purpose, for now. The backend writes plain (unsigned) URLs of the
+      # form ${MINIO_URL}/profile-pictures/<key> straight into t_users.profile_picture_url, and
+      # signs book links against this same host — so browsers must be able to reach MinIO
+      # directly at exactly this address. Closing the port breaks every existing avatar.
+      #
+      # Only the `profile-pictures` bucket is public-read (MinIOService#ensurePublicReadPolicy,
+      # called once from ProfileService); books and previews are private and served via presigned
+      # URLs. So what is exposed here is avatars, which are public in the product anyway — the
+      # part that was NOT acceptable was the published root credentials above.
+      #
+      # Moving this behind Caddy needs a hostname, not a path: presigned URLs sign the host and
+      # full path, so a /files/* prefix would invalidate every signature. Do it together with the
+      # domain + TLS work, and rewrite existing t_users.profile_picture_url rows in the same pass.
+      # The console port (9001) is deliberately not published.
       - "9000:9000"
     volumes:
       - minio_data:/data

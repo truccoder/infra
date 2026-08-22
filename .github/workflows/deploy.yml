@@ -35,7 +35,7 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          source: "docker/docker-compose.prod.yml,docker/Caddyfile"
+          source: "docker/docker-compose.prod.yml,docker/Caddyfile,scripts/backup.sh,scripts/rewrite-minio-urls.sql"
           target: /opt/socialapp
           strip_components: 1
 
@@ -47,29 +47,151 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             cd /opt/socialapp
-            echo "SPRING_PROFILES_ACTIVE=${{ secrets.SPRING_PROFILES_ACTIVE }}" > .env
-            echo "AXIOM_TOKEN=${{ secrets.AXIOM_TOKEN }}" >> .env
-            echo "AXIOM_DATASET=${{ secrets.AXIOM_DATASET }}" >> .env
-            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-            echo "MAIL_HOST=${{ secrets.MAIL_HOST }}" >> .env
-            echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}" >> .env
-            echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> .env
-            echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> .env
-            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
-            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-            echo "GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" >> .env
-            echo "GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" >> .env
-            echo "GITHUB_OAUTH_CLIENT_ID=${{ secrets.GITHUB_OAUTH_CLIENT_ID }}" >> .env
-            echo "GITHUB_OAUTH_CLIENT_SECRET=${{ secrets.GITHUB_OAUTH_CLIENT_SECRET }}" >> .env
-            echo "GOOGLE_CALENDAR_CLIENT_ID=${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}" >> .env
-            echo "GOOGLE_CALENDAR_CLIENT_SECRET=${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}" >> .env
-            echo "STREAM_API_KEY=${{ secrets.STREAM_API_KEY }}" >> .env
-            echo "STREAM_API_SECRET=${{ secrets.STREAM_API_SECRET }}" >> .env
-            echo "TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}" >> .env
-            echo "TWILIO_API_KEY_SID=${{ secrets.TWILIO_API_KEY_SID }}" >> .env
-            echo "TWILIO_API_KEY_SECRET=${{ secrets.TWILIO_API_KEY_SECRET }}" >> .env
-            echo "TWILIO_CONVERSATIONS_SERVICE_SID=${{ secrets.TWILIO_CONVERSATIONS_SERVICE_SID }}" >> .env
+
+            echo "SPRING_PROFILES_ACTIVE=${{ secrets.SPRING_PROFILES_ACTIVE }}" > .env.tmp
+
+            # Địa chỉ công khai. Mọi URL người dùng nhìn thấy (link đặt lại mật khẩu, CORS,
+            # redirect URI của OAuth) đều dựng từ đây — xem docker/.env.example.
+            echo "PUBLIC_BASE_URL=${{ secrets.PUBLIC_BASE_URL }}" >> .env.tmp
+            echo "PUBLIC_DOMAIN=${{ secrets.PUBLIC_DOMAIN }}" >> .env.tmp
+            echo "MINIO_PUBLIC_URL=${{ secrets.MINIO_PUBLIC_URL }}" >> .env.tmp
+
+            # Credential của hạ tầng. Tới 2026-08-18 chúng là giá trị mặc định ghi thẳng trong
+            # docker-compose.prod.yml đã commit; giờ chỉ đến từ secrets.
+            echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" >> .env.tmp
+            echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env.tmp
+            echo "NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}" >> .env.tmp
+
+            echo "AXIOM_TOKEN=${{ secrets.AXIOM_TOKEN }}" >> .env.tmp
+            echo "AXIOM_DATASET=${{ secrets.AXIOM_DATASET }}" >> .env.tmp
+            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env.tmp
+            echo "MAIL_HOST=${{ secrets.MAIL_HOST }}" >> .env.tmp
+            echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}" >> .env.tmp
+            echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> .env.tmp
+            echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> .env.tmp
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env.tmp
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env.tmp
+            echo "GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" >> .env.tmp
+            echo "GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" >> .env.tmp
+            # Tên secret là GH_*, tên biến môi trường vẫn là GITHUB_OAUTH_* — KHÔNG phải sơ suất.
+            # GitHub từ chối tạo secret có tiền tố GITHUB_ (tiền tố dành riêng cho hệ thống), nên
+            # Một secret mang chính tên đó KHÔNG BAO GIỜ có giá trị: nó luôn nở ra chuỗi rỗng
+            # và workflow vẫn xanh. Đó là lý do đăng nhập bằng GitHub hỏng trên production kể từ
+            # ngày đầu mà không có lỗi nào ở bất cứ đâu. Backend vẫn đọc GITHUB_OAUTH_CLIENT_ID,
+            # nên chỉ đổi phía secret.
+            echo "GITHUB_OAUTH_CLIENT_ID=${{ secrets.GH_OAUTH_CLIENT_ID }}" >> .env.tmp
+            echo "GITHUB_OAUTH_CLIENT_SECRET=${{ secrets.GH_OAUTH_CLIENT_SECRET }}" >> .env.tmp
+            echo "GOOGLE_CALENDAR_CLIENT_ID=${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}" >> .env.tmp
+            echo "GOOGLE_CALENDAR_CLIENT_SECRET=${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}" >> .env.tmp
+            echo "STREAM_API_KEY=${{ secrets.STREAM_API_KEY }}" >> .env.tmp
+            echo "STREAM_API_SECRET=${{ secrets.STREAM_API_SECRET }}" >> .env.tmp
+
+            # Push notification. Bỏ trống được — chỉ mất push, thông báo trong ứng dụng qua SSE
+            # không phụ thuộc vào đây, nên hai biến này nằm ở nhóm TUỲ CHỌN của bước kiểm tra bên
+            # dưới. Bị bỏ sót hoàn toàn cho tới 2026-08-22.
+            echo "ONESIGNAL_APP_ID=${{ secrets.ONESIGNAL_APP_ID }}" >> .env.tmp
+            echo "ONESIGNAL_REST_API_KEY=${{ secrets.ONESIGNAL_REST_API_KEY }}" >> .env.tmp
+            echo "TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}" >> .env.tmp
+            echo "TWILIO_API_KEY_SID=${{ secrets.TWILIO_API_KEY_SID }}" >> .env.tmp
+            echo "TWILIO_API_KEY_SECRET=${{ secrets.TWILIO_API_KEY_SECRET }}" >> .env.tmp
+            echo "TWILIO_CONVERSATIONS_SERVICE_SID=${{ secrets.TWILIO_CONVERSATIONS_SERVICE_SID }}" >> .env.tmp
+
+            # ─── Kiểm tra secret rỗng ──────────────────────────────────────────────────────
+            #
+            # Một dòng echo lấy giá trị từ một secret CHƯA ĐƯỢC TẠO không làm workflow hỏng:
+            # GitHub thay bằng chuỗi rỗng, dòng `X=` vẫn được ghi, container vẫn lên, và cấu hình
+            # sai một cách hoàn toàn im lặng. Đây là cách hỏng đắt nhất của toàn bộ pipeline này —
+            # deploy báo xanh trong khi JWT_SECRET rỗng hoặc DB_PASSWORD rỗng.
+            #
+            # Vì vậy mọi thứ ở trên ghi vào .env.tmp, và chỉ file đã qua kiểm tra mới được đặt vào
+            # chỗ của .env. Hỏng ở đây nghĩa là deployment đang chạy giữ nguyên .env cũ còn tốt,
+            # thay vì bị thay bằng một file thiếu.
+            missing=""
+
+            # Danh sách dựng bằng phép nối chuỗi chứ không bằng dấu gạch chéo nối dòng: file này
+            # nằm trong working tree Windows (core.autocrlf=true), và một dòng nối kết thúc bằng
+            # CR sẽ làm shell trên máy chủ Linux báo lỗi cú pháp ngay giữa lúc deploy.
+            required="SPRING_PROFILES_ACTIVE PUBLIC_BASE_URL MINIO_PUBLIC_URL"
+            required="$required MINIO_ROOT_USER MINIO_ROOT_PASSWORD NEO4J_PASSWORD"
+            required="$required AXIOM_TOKEN AXIOM_DATASET DB_PASSWORD JWT_SECRET"
+            required="$required MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD"
+            required="$required GEMINI_API_KEY STREAM_API_KEY STREAM_API_SECRET"
+            required="$required GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET"
+
+            for v in $required; do
+              if [ -z "$(grep -m1 "^${v}=" .env.tmp | cut -d= -f2-)" ]; then
+                missing="${missing} ${v}"
+              fi
+            done
+
+            # Nhóm TUỲ CHỌN: rỗng là một trạng thái hợp lệ, chỉ cảnh báo.
+            #   GOOGLE_OAUTH_*    — rỗng = không đăng nhập bằng Google được
+            #   GOOGLE_CALENDAR_* — rỗng = không đồng bộ sự kiện sang Google Calendar được
+            #   ONESIGNAL_*       — rỗng = không có push
+            #   TWILIO_*          — frontend hiện KHÔNG dùng tới (chat qua Stream, gọi PeerJS)
+            #
+            # Bốn biến Google nằm ở nhóm cảnh báo là một QUYẾT ĐỊNH, không phải bỏ sót (2026-08-22).
+            # Chúng đã rỗng từ trước khi có bước kiểm tra này — compose luôn lấy chúng từ ${...} và
+            # secret thì chưa bao giờ được tạo — nên đăng nhập Google và Calendar hỏng trên
+            # production ngay từ đầu. Để ở nhóm bắt buộc nghĩa là chặn mọi lần deploy vì một tính
+            # năng vốn đã chết, tức là phạt những thay đổi không liên quan. Điền secret vào là hết
+            # cảnh báo; chừng nào còn cảnh báo thì đó vẫn là trạng thái thật của production.
+            #
+            # GITHUB_OAUTH_* CỐ Ý ở lại nhóm bắt buộc: đăng nhập bằng GitHub là luồng chính của sản
+            # phẩm, và giờ đã có tên secret dùng được (GH_OAUTH_*) nên không còn lý do để trống.
+            #
+            # PUBLIC_DOMAIN cố tình KHÔNG nằm ở đây: rỗng là trạng thái đang chạy có chủ ý, nên
+            # cảnh báo mỗi lần deploy chỉ dạy người đọc bỏ qua cảnh báo.
+            optional="GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET"
+            optional="$optional GOOGLE_CALENDAR_CLIENT_ID GOOGLE_CALENDAR_CLIENT_SECRET"
+            optional="$optional ONESIGNAL_APP_ID ONESIGNAL_REST_API_KEY"
+            optional="$optional TWILIO_ACCOUNT_SID TWILIO_API_KEY_SID"
+            optional="$optional TWILIO_API_KEY_SECRET TWILIO_CONVERSATIONS_SERVICE_SID"
+
+            for v in $optional; do
+              if [ -z "$(grep -m1 "^${v}=" .env.tmp | cut -d= -f2-)" ]; then
+                echo "::warning::${v} rỗng — tính năng phụ thuộc vào nó sẽ không hoạt động."
+              fi
+            done
+
+            if [ -z "$(grep -m1 "^PUBLIC_DOMAIN=" .env.tmp | cut -d= -f2-)" ]; then
+              echo "::notice::PUBLIC_DOMAIN rỗng — Caddy nghe cổng 80 HTTP thuần, không có TLS."
+            fi
+
+            if [ -n "$missing" ]; then
+              echo "::error::Thiếu GitHub secret (giá trị rỗng):${missing}"
+              echo "Thêm ở Settings → Secrets and variables → Actions, rồi chạy lại workflow."
+              rm -f .env.tmp
+              exit 1
+            fi
+
+            mv .env.tmp .env
+
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u truccoder --password-stdin
             docker compose -f docker-compose.prod.yml pull backend web-ui
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
+
+            # ─── Kiểm tra trang có thật sự phục vụ được không ────────────────────────────────
+            #
+            # `up -d` trả về 0 chỉ nghĩa là Compose đã làm xong việc của nó, KHÔNG nghĩa là có ai
+            # đang nghe cổng 80. Ngày 2026-08-22, Caddy hoàn toàn không được tạo — nó chờ backend
+            # healthy, backend chờ Neo4j healthy, Neo4j thì đăng nhập bằng mật khẩu mới trong khi
+            # volume vẫn giữ mật khẩu cũ — và deploy vẫn kết thúc êm. Lỗi chỉ lộ ra khi có người
+            # mở trình duyệt và nhận ERR_CONNECTION_REFUSED, tức là không có cảnh báo nào giữa
+            # lúc deploy và lúc người dùng phát hiện.
+            #
+            # Vòng lặp chứ không phải một phát: backend cần khoảng một phút cho Flyway, và bước
+            # này phải hỏng khi trang thật sự chết, chứ không phải khi nó lên chậm.
+            for i in $(seq 1 30); do
+              if curl -fsS -o /dev/null --max-time 5 http://localhost/; then
+                echo "::notice::Cổng 80 phục vụ được sau khoảng $((i * 5))s."
+                exit 0
+              fi
+              sleep 5
+            done
+
+            echo "::error::Cổng 80 không phục vụ sau 150s — trang đang chết dù deploy đã chạy xong."
+            docker compose -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.prod.yml logs --tail 40 caddy backend neo4j
+            exit 1
