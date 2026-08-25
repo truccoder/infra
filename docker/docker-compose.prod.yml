@@ -82,6 +82,23 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       # No default in application.yml — the backend refuses to start without it.
       JWT_SECRET: ${JWT_SECRET}
+      # Khoá AES-256 mã hoá các cột chứa token OAuth của bên thứ ba: access token GitHub, và cặp
+      # access/refresh token Google Calendar. Không phải khoá của dịch vụ nào bên ngoài — nó do
+      # chính dự án sinh ra, và chỉ backend này dùng để mã hoá rồi giải mã cột của chính nó.
+      #
+      # Vì sao mã hoá chứ không băm như JWT/refresh token: ứng dụng phải GỬI LẠI những token này
+      # cho GitHub và Google, nên bắt buộc đọc ngược ra được. Băm thì mất luôn khả năng dùng.
+      #
+      # Thứ bị lộ nếu để thô không phải tài khoản trong ứng dụng này, mà là tài khoản của người
+      # dùng Ở DỊCH VỤ KHÁC: token GitHub mang scope user:email (đọc được email riêng tư họ đã ẩn),
+      # token Google mang calendar.events (đọc/ghi lịch). Nặng nhất là REFRESH token của Google —
+      # nó không hết hạn cho tới khi người dùng tự thu hồi, tức là quyền vào lịch VĨNH VIỄN, nằm
+      # trong một CSDL dùng chung pooler Supabase.
+      #
+      # Để trống KHÔNG làm backend chết: chỉ việc liên kết GitHub/Google trả 503 kèm thông báo rõ
+      # ràng, phần còn lại chạy bình thường. Nhưng nó nằm trong nhóm bắt buộc của deploy.yml —
+      # xem lý do ở đó.
+      COLUMN_ENCRYPTION_KEY: ${COLUMN_ENCRYPTION_KEY}
       # The OpenAPI spec enumerates every endpoint and DTO field, and Swagger UI is a live
       # request console — both stay off in production (see application.yml).
       SPRINGDOC_ENABLED: "false"

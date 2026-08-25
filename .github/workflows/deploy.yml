@@ -71,6 +71,7 @@ jobs:
             echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> .env.tmp
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env.tmp
             echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env.tmp
+            echo "COLUMN_ENCRYPTION_KEY=${{ secrets.COLUMN_ENCRYPTION_KEY }}" >> .env.tmp
             echo "GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" >> .env.tmp
             echo "GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" >> .env.tmp
             # Tên secret là GH_*, tên biến môi trường vẫn là GITHUB_OAUTH_* — KHÔNG phải sơ suất.
@@ -117,6 +118,22 @@ jobs:
             required="$required MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD"
             required="$required GEMINI_API_KEY STREAM_API_KEY STREAM_API_SECRET"
             required="$required GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET"
+
+            # COLUMN_ENCRYPTION_KEY nằm ở nhóm BẮT BUỘC, không phải nhóm cảnh báo, và đó là một
+            # quyết định — để trống thì backend vẫn lên, chỉ việc liên kết GitHub/Google trả 503.
+            #
+            # Lý do xếp vào bắt buộc: GITHUB_OAUTH_* đã ở nhóm này, nghĩa là tính năng GitHub được
+            # coi là phải chạy được. Thiếu khoá thì nó không chạy, và hỏng theo đúng kiểu file này
+            # đã hai lần phải sửa hậu quả: deploy xanh, không lỗi ở đâu, người dùng bấm liên kết
+            # rồi nhận 503 mà không ai biết. Sinh khoá tốn đúng một câu lệnh:
+            #
+            #   openssl rand -base64 32
+            #
+            # rồi lưu vào GitHub secret COLUMN_ENCRYPTION_KEY.
+            #
+            # ⚠️ ĐỔI KHOÁ = MẤT TOÀN BỘ TOKEN ĐÃ MÃ HOÁ. Không có đường khôi phục; người dùng phải
+            # liên kết lại GitHub/Google. Sinh một lần rồi giữ, đừng sinh lại mỗi lần deploy.
+            required="$required COLUMN_ENCRYPTION_KEY"
 
             for v in $required; do
               if [ -z "$(grep -m1 "^${v}=" .env.tmp | cut -d= -f2-)" ]; then
