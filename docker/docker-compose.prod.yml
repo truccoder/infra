@@ -65,7 +65,22 @@ services:
 
   # ─── Application Services ───
   backend:
-    image: ghcr.io/truccoder/backend:latest
+    # Tag do workflow deploy của repo backend ghi vào .env (`BACKEND_IMAGE_TAG=<sha>`) sau khi
+    # image đã qua test và container đã báo healthy. Đó là con trỏ tới ĐÚNG bản đang phục vụ.
+    #
+    # Vì sao không để `:latest` như trước: `latest` được gắn lại mỗi lần build từ main, nên nó là
+    # một cái tên chạy — file compose này nói "backend", còn thứ thực sự khởi động là bất kỳ bản
+    # nào GHCR đang trỏ tới lúc `pull` chạy. Hệ quả cụ thể: không có mốc để quay lui khi bản mới
+    # hỏng, và một lần `pull` vì lý do không liên quan (deploy infra, dựng lại máy chủ) cũng đủ
+    # đổi phiên bản backend của production.
+    #
+    # `:-latest` giữ nguyên hành vi cũ khi .env chưa có biến này — máy chủ chưa từng deploy bằng
+    # workflow mới vẫn lên được bình thường, không phải đặt biến trước.
+    #
+    # ⚠️ web-ui bên dưới CỐ Ý vẫn là `:latest`: workflow của repo frontend tự deploy chính nó và
+    # chưa ghi tag nào vào .env. Thêm `${WEBUI_IMAGE_TAG:-latest}` ở đây mà không sửa repo đó thì
+    # chỉ có thêm một biến không ai ghi — trông như đã ghim trong khi không.
+    image: ghcr.io/truccoder/backend:${BACKEND_IMAGE_TAG:-latest}
     mem_limit: 1024m
     env_file:
       - .env

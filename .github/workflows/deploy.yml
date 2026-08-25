@@ -97,6 +97,25 @@ jobs:
             echo "TWILIO_API_KEY_SECRET=${{ secrets.TWILIO_API_KEY_SECRET }}" >> .env.tmp
             echo "TWILIO_CONVERSATIONS_SERVICE_SID=${{ secrets.TWILIO_CONVERSATIONS_SERVICE_SID }}" >> .env.tmp
 
+            # ─── Giữ lại tag image mà backend đã ghim ──────────────────────────────────────
+            #
+            # BACKEND_IMAGE_TAG KHÔNG đến từ secrets: workflow deploy của repo backend ghi nó vào
+            # .env trên máy chủ sau mỗi lần deploy thành công, và docker-compose.prod.yml đọc nó.
+            #
+            # File .env ở đây được dựng LẠI TỪ ĐẦU mỗi lần chạy. Không đọc lại giá trị cũ nghĩa là
+            # mỗi lần deploy infra — kể cả khi chỉ sửa một dòng trong Caddyfile — sẽ âm thầm kéo
+            # production về `:latest`, tức là về một image KHÁC với bản vừa được kiểm tra, đồng
+            # thời xoá luôn mốc quay lui. Đúng cái bẫy mà việc ghim tag sinh ra để tránh.
+            #
+            # `|| true`: lần chạy đầu tiên chưa có .env, và chưa ghim tag cũng là trạng thái hợp lệ.
+            KEEP_TAG="$(grep -m1 '^BACKEND_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2- || true)"
+            if [ -n "$KEEP_TAG" ]; then
+              echo "BACKEND_IMAGE_TAG=$KEEP_TAG" >> .env.tmp
+              echo "::notice::Giữ nguyên BACKEND_IMAGE_TAG=$KEEP_TAG mà backend đã ghim."
+            else
+              echo "::notice::Chưa có BACKEND_IMAGE_TAG trong .env — backend sẽ chạy tag :latest."
+            fi
+
             # ─── Kiểm tra secret rỗng ──────────────────────────────────────────────────────
             #
             # Một dòng echo lấy giá trị từ một secret CHƯA ĐƯỢC TẠO không làm workflow hỏng:
