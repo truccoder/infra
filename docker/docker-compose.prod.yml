@@ -130,6 +130,13 @@ services:
       # môi trường nào (quyết định 2026-08-21: chấp nhận để khỏi quản lý thêm secret). Nghĩa là
       # mật khẩu ADMIN của môi trường này nằm công khai trong repo backend — xem chính file đó.
       FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/seed
+      # Đồ thị bạn bè sống ở Neo4j và là thứ /friendships cùng /suggestions THỰC SỰ đọc; Flyway chỉ
+      # quản Postgres. Không có cờ này thì sau khi nạp seed, Postgres có hàng nghìn lời mời đã chấp
+      # nhận trong khi Neo4j trống trơn — hồ sơ hiện "đã là bạn" còn danh sách bạn bè thì rỗng, và
+      # không có gì báo lỗi.
+      #
+      # An toàn để bật thường trực: Neo4jSeedInitializer bỏ qua khi đồ thị đã có node User.
+      NEO4J_SEED_ON_START: ${NEO4J_SEED_ON_START:-true}
       # Guest rate limiting counts per client IP. Behind Caddy, every request arrives from the
       # proxy's container address, so with this off the ENTIRE anonymous internet shares one
       # 60-requests-per-minute bucket — real visitors get 429s while a crawler is never isolated.
@@ -224,6 +231,17 @@ services:
       MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-F8BBA842ECF85}
       MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-K951B6PE1waDMi640xX08PD3vg6EkVlz}
       MOMO_API_URL: ${MOMO_API_URL:-https://test-payment.momo.vn}
+      # BẮT BUỘC ĐẶT, và mặc định ở đây cố ý KHÁC mặc định của repo backend.
+      #
+      # application.yml của backend để `payWithATM` — màn hình nhập thẻ, chọn vì dễ quay video lúc
+      # demo. Trên sandbox, luồng thẻ đậu ở resultCode 7002 vĩnh viễn và KHÔNG BAO GIỜ tự settle;
+      # thứ gỡ được nó là POST /v1/api/payments/{ref}/dev-settle, mà endpoint đó mang @Profile("dev")
+      # nên không tồn tại ở đây.
+      #
+      # Hệ quả nếu để trống dòng này: đơn hàng vẫn tạo được, người mua vẫn được chuyển sang MoMo,
+      # và trạng thái đứng nguyên PENDING mãi mãi. Không log lỗi, không mã lỗi — MomoService coi
+      # 7002 là "đang bay" và giữ nguyên PENDING, đó là hành vi đúng của nó.
+      MOMO_REQUEST_TYPE: ${MOMO_REQUEST_TYPE:-captureWallet}
       MOMO_REDIRECT_URL: ${PUBLIC_BASE_URL}/payment/success
       MOMO_IPN_URL: ${PUBLIC_BASE_URL}/v1/api/payments/momo/webhook
     depends_on:
@@ -244,10 +262,13 @@ services:
     mem_limit: 448m
     environment:
       NEXT_PUBLIC_USE_MOCK: "false"
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
-      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
-      TWILIO_API_KEY_SECRET: ${TWILIO_API_KEY_SECRET}
-      TWILIO_CONVERSATIONS_SERVICE_SID: ${TWILIO_CONVERSATIONS_SERVICE_SID}
+      # KHÔNG có biến nào của Stream Chat ở đây, và đó là đúng: frontend nhận cả apiKey lẫn token
+      # từ backend qua GET /v1/api/chat/token (xem ChatTokenResponse), nên khoá không cần đi vòng
+      # qua biến môi trường của web-ui.
+      #
+      # Bốn biến TWILIO_* từng nằm ở đây đã được gỡ (28/08): chat chuyển sang Stream Chat từ lâu,
+      # frontend không còn phụ thuộc twilio trong package.json và mọi nhắc tới Twilio trong mã chỉ
+      # còn là chú thích giải thích cái đã bị thay. Truyền một secret không ai đọc là rủi ro thuần.
     restart: always
     networks:
       - app-network
