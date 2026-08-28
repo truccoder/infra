@@ -13,13 +13,20 @@
 -- người dùng cũ thành ảnh vỡ — và không có gì báo lỗi ở phía server, vì server không phải là bên
 -- đi tải ảnh đó.
 --
--- Chỉ ảnh đại diện cần bước này. Sách và ảnh bìa lưu OBJECT KEY chứ không lưu URL (xem V44), và
--- link được ký lại mỗi lần đọc, nên chúng tự bám theo cấu hình mới.
+-- BA CỘT cần bước này, không phải một. Bản đầu của script chỉ xử lý t_users.profile_picture_url;
+-- hai cột kia xuất hiện sau và im lặng nằm ngoài:
 --
--- CÁCH CHẠY:
+--     t_users.profile_picture_url   ProfileService
+--     t_users.cover_image_url       ProfileService — cột thêm ở V68
+--     t_posts.images                MediaService — MẢNG jsonb các URL tuyệt đối
+--
+-- Sách thì KHÔNG cần: t_books lưu object key chứ không lưu URL (đổi ở V44) và backend ký lại link
+-- mỗi lần đọc, nên chúng tự bám theo cấu hình mới.
+--
+-- CÁCH CHẠY (cắt sang domain elitenexus.id.vn, 2026-08-31 — các hàng cũ trỏ về IP VPS trước đó):
 --   psql "<chuỗi kết nối Supabase>" \
 --     -v old_url="'http://14.225.217.4:9000'" \
---     -v new_url="'https://files.socialapp.example.com'" \
+--     -v new_url="'https://files.elitenexus.id.vn'" \
 --     -f scripts/rewrite-minio-urls.sql
 --
 -- Không có dấu / ở cuối mỗi giá trị, vì phần sau nó luôn bắt đầu bằng `/profile-pictures/`.
@@ -36,11 +43,14 @@ BEGIN;
 -- ── Bước 1: xem trước sẽ đụng vào bao nhiêu hàng ────────────────────────────────────────────
 -- Đọc con số này trước khi commit. Bằng 0 nghĩa là old_url không khớp gì cả — thường là do gõ sai
 -- cổng hoặc thừa dấu / ở cuối, chứ không phải vì không có ảnh nào.
-SELECT count(*) AS so_hang_se_doi,
+SELECT (SELECT count(*) FROM socialapp.t_users
+         WHERE profile_picture_url LIKE :old_url || '%') AS anh_dai_dien,
+       (SELECT count(*) FROM socialapp.t_users
+         WHERE cover_image_url LIKE :old_url || '%')      AS anh_bia,
+       (SELECT count(*) FROM socialapp.t_posts
+         WHERE images::text LIKE '%' || :old_url || '%')  AS bai_co_anh,
        :old_url AS dia_chi_cu,
-       :new_url AS dia_chi_moi
-  FROM socialapp.t_users
- WHERE profile_picture_url LIKE :old_url || '%';
+       :new_url AS dia_chi_moi;
 
 -- Vài ví dụ, để mắt thường xác nhận phần đuôi giữ nguyên.
 SELECT id,
@@ -58,11 +68,42 @@ UPDATE socialapp.t_users
        updated_at = now()
  WHERE profile_picture_url LIKE :old_url || '%';
 
+UPDATE socialapp.t_users
+   SET cover_image_url = :new_url || substring(cover_image_url from length(:old_url) + 1),
+       updated_at = now()
+ WHERE cover_image_url LIKE :old_url || '%';
+
+-- t_posts.images là MẢNG jsonb, nên phải tháo ra, viết lại từng phần tử, rồi gom lại. Chạy
+-- replace() trên cả chuỗi jsonb thì nhanh hơn nhưng cũng đụng vào tên object nào tình cờ chứa
+-- địa chỉ cũ — cùng lý do đã tránh replace() ở trên.
+UPDATE socialapp.t_posts p
+   SET images = rewritten.arr,
+       updated_at = now()
+  FROM (
+        SELECT t.id,
+               jsonb_agg(
+                   CASE WHEN img #>> '{}' LIKE :old_url || '%'
+                        THEN to_jsonb(:new_url || substring(img #>> '{}' from length(:old_url) + 1))
+                        ELSE img
+                   END
+                   ORDER BY ord
+               ) AS arr
+          FROM socialapp.t_posts t,
+               LATERAL jsonb_array_elements(t.images) WITH ORDINALITY AS e(img, ord)
+         WHERE t.images IS NOT NULL
+           AND t.images::text LIKE '%' || :old_url || '%'
+         GROUP BY t.id
+       ) AS rewritten
+ WHERE p.id = rewritten.id;
+
 -- ── Bước 3: kiểm tra lại trước khi commit ───────────────────────────────────────────────────
--- Kỳ vọng: 0 hàng còn mang địa chỉ cũ.
-SELECT count(*) AS con_sot_dia_chi_cu
-  FROM socialapp.t_users
- WHERE profile_picture_url LIKE :old_url || '%';
+-- Kỳ vọng: cả ba con số đều bằng 0.
+SELECT (SELECT count(*) FROM socialapp.t_users
+         WHERE profile_picture_url LIKE :old_url || '%') AS con_sot_anh_dai_dien,
+       (SELECT count(*) FROM socialapp.t_users
+         WHERE cover_image_url LIKE :old_url || '%')      AS con_sot_anh_bia,
+       (SELECT count(*) FROM socialapp.t_posts
+         WHERE images::text LIKE '%' || :old_url || '%')  AS con_sot_anh_bai_viet;
 
 -- Hài lòng thì:
 COMMIT;

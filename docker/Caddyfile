@@ -44,22 +44,20 @@
 	}
 }
 
-# ─── MinIO sau proxy (chỉ làm được sau khi đã có domain) ─────────────────────────────────────
+# ─── MinIO sau proxy ────────────────────────────────────────────────────────────────────────
 #
-# Hiện MinIO publish thẳng cổng 9000 ra Internet. Muốn đóng cổng đó thì bỏ comment khối dưới —
-# nhưng bắt buộc dùng MỘT HOSTNAME RIÊNG, không được dùng đường dẫn con kiểu /files/*.
+# MinIO phục vụ ảnh đại diện / ảnh bài viết (bucket public-read) và link tải sách (presigned URL)
+# qua hostname riêng files.elitenexus.id.vn. Bắt buộc là HOSTNAME RIÊNG, không phải đường dẫn con
+# kiểu /files/*: presigned URL ký trên cả host lẫn đường dẫn đầy đủ, thêm tiền tố path là hỏng chữ
+# ký và mọi link tải sách chết.
 #
-# Lý do: link tải sách là presigned URL, chữ ký của nó tính trên cả host lẫn đường dẫn đầy đủ.
-# Thêm một tiền tố đường dẫn là hỏng toàn bộ chữ ký. Hostname riêng giữ nguyên đường dẫn nên
-# chữ ký vẫn hợp lệ.
+# ⚠️ Khối này chỉ được bỏ comment KHI MINIO_PUBLIC_DOMAIN có giá trị thật trong .env. Ở đây không
+# có giá trị mặc định nào đỡ cho, nên biến rỗng làm dòng dưới rút lại còn ` {` và giết cả tiến
+# trình Caddy — kể cả site chính vốn đang chạy tốt. deploy.yml ghi biến này từ secret
+# MINIO_PUBLIC_DOMAIN; kiểm tra secret đó tồn tại trước khi deploy.
 #
-# Kèm theo, phải viết lại các URL ảnh đại diện đã lưu trong database — chúng giữ địa chỉ tuyệt đối
-# tại thời điểm upload và không tự đổi theo. Xem scripts/rewrite-minio-urls.sql.
-#
-# Bỏ comment thì phải đặt MINIO_PUBLIC_DOMAIN thành một hostname THẬT. Nó dính đúng cái bẫy vừa
-# nói ở trên và còn tệ hơn: ở đây không có giá trị mặc định nào đỡ cho, nên một biến rỗng biến
-# dòng dưới thành ` {` và giết cả tiến trình Caddy — kể cả site chính vốn đang chạy tốt.
-#
-# {$MINIO_PUBLIC_DOMAIN} {
-# 	reverse_proxy minio:9000
-# }
+# Cổng 9000 vẫn publish trong docker-compose.prod.yml như đường dự phòng trong lúc chuyển đổi; đóng
+# lại sau khi đã xác nhận ảnh đại diện và link tải sách chạy qua hostname này.
+{$MINIO_PUBLIC_DOMAIN} {
+	reverse_proxy minio:9000
+}

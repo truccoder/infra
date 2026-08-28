@@ -41,9 +41,14 @@ services:
     # thắng như cũ. Đã kiểm chứng bằng `caddy validate` ở cả ba trường hợp: rỗng, `:80`, domain.
     environment:
       PUBLIC_DOMAIN: "${PUBLIC_DOMAIN:-:80}"
-      # Chỉ dùng khi bỏ comment khối MinIO trong Caddyfile. Khai sẵn để lúc đó không vấp lại đúng
-      # cái bẫy vừa nói ở trên.
-      MINIO_PUBLIC_DOMAIN: ${MINIO_PUBLIC_DOMAIN:-}
+      # Khối MinIO trong Caddyfile ĐANG được bật (files.elitenexus.id.vn). Dòng `{$MINIO_PUBLIC_DOMAIN}`
+      # ở đó không có giá trị mặc định nào đỡ cho, nên một giá trị RỖNG làm dòng địa chỉ site rút lại
+      # còn ` {` và giết cả tiến trình Caddy — kéo sập luôn site chính.
+      #
+      # `:?` (khác `:-`) bắt Compose DỪNG với thông báo rõ ràng nếu biến chưa đặt hoặc rỗng, thay vì
+      # để container lên rồi Caddy chết trong vòng lặp restart. deploy.yml đã kiểm tra secret này ở
+      # nhóm bắt buộc; đây là lớp chặn thứ hai cho lần `docker compose up` chạy tay trên máy chủ.
+      MINIO_PUBLIC_DOMAIN: "${MINIO_PUBLIC_DOMAIN:?chua dat trong .env - khoi MinIO trong Caddyfile dang bat, bien rong se lam sap Caddy}"
     ports:
       - "80:80"
       - "443:443"
@@ -130,6 +135,13 @@ services:
       # môi trường nào (quyết định 2026-08-21: chấp nhận để khỏi quản lý thêm secret). Nghĩa là
       # mật khẩu ADMIN của môi trường này nằm công khai trong repo backend — xem chính file đó.
       FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/seed
+      # Đồ thị bạn bè sống ở Neo4j và là thứ /friendships cùng /suggestions THỰC SỰ đọc; Flyway chỉ
+      # quản Postgres. Không có cờ này thì sau khi nạp seed, Postgres có hàng nghìn lời mời đã chấp
+      # nhận trong khi Neo4j trống trơn — hồ sơ hiện "đã là bạn" còn danh sách bạn bè thì rỗng, và
+      # không có gì báo lỗi.
+      #
+      # An toàn để bật thường trực: Neo4jSeedInitializer bỏ qua khi đồ thị đã có node User.
+      NEO4J_SEED_ON_START: ${NEO4J_SEED_ON_START:-true}
       # Guest rate limiting counts per client IP. Behind Caddy, every request arrives from the
       # proxy's container address, so with this off the ENTIRE anonymous internet shares one
       # 60-requests-per-minute bucket — real visitors get 429s while a crawler is never isolated.
@@ -154,6 +166,15 @@ services:
       # MinIO must be reached at the SAME address the backend uses to sign presigned URLs,
       # because that address gets baked into t_users.profile_picture_url / t_books.cover_image_url
       # and served to real browsers — "minio" (Docker-internal DNS) would be unreachable from them.
+      #
+      # ⚠️ Từ khi giá trị này là https://files.elitenexus.id.vn (đi qua Caddy), backend đi ĐƯỜNG VÒNG
+      # qua Caddy để tới MinIO. MinIOBucketInitializer chạy ở ApplicationReadyEvent, và lúc đó Caddy
+      # có thể CHƯA lên (caddy `depends_on` backend `service_healthy`). Lần chạy đó sẽ log ERROR
+      # "Could not prepare MinIO bucket" và bỏ qua — KHÔNG làm backend chết, nhưng policy public-read
+      # của hai bucket ảnh cũng chưa được đặt. Sau lần deploy cắt domain ĐẦU TIÊN, chạy một lần:
+      #   docker compose -f docker-compose.prod.yml restart backend
+      # để initializer chạy lại khi Caddy đã sẵn sàng. Các lần deploy sau không cần (volume đã có
+      # bucket + policy). Xem docs/domain-cutover.md.
       MINIO_URL: ${MINIO_PUBLIC_URL}
       # The backend authenticates to MinIO as root, so these are the same two values the minio
       # service below is started with. They were literal defaults in this file until 2026-08-18 —
@@ -224,6 +245,17 @@ services:
       MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-F8BBA842ECF85}
       MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-K951B6PE1waDMi640xX08PD3vg6EkVlz}
       MOMO_API_URL: ${MOMO_API_URL:-https://test-payment.momo.vn}
+      # BẮT BUỘC ĐẶT, và mặc định ở đây cố ý KHÁC mặc định của repo backend.
+      #
+      # application.yml của backend để `payWithATM` — màn hình nhập thẻ, chọn vì dễ quay video lúc
+      # demo. Trên sandbox, luồng thẻ đậu ở resultCode 7002 vĩnh viễn và KHÔNG BAO GIỜ tự settle;
+      # thứ gỡ được nó là POST /v1/api/payments/{ref}/dev-settle, mà endpoint đó mang @Profile("dev")
+      # nên không tồn tại ở đây.
+      #
+      # Hệ quả nếu để trống dòng này: đơn hàng vẫn tạo được, người mua vẫn được chuyển sang MoMo,
+      # và trạng thái đứng nguyên PENDING mãi mãi. Không log lỗi, không mã lỗi — MomoService coi
+      # 7002 là "đang bay" và giữ nguyên PENDING, đó là hành vi đúng của nó.
+      MOMO_REQUEST_TYPE: ${MOMO_REQUEST_TYPE:-captureWallet}
       MOMO_REDIRECT_URL: ${PUBLIC_BASE_URL}/payment/success
       MOMO_IPN_URL: ${PUBLIC_BASE_URL}/v1/api/payments/momo/webhook
     depends_on:
@@ -244,10 +276,13 @@ services:
     mem_limit: 448m
     environment:
       NEXT_PUBLIC_USE_MOCK: "false"
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
-      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID}
-      TWILIO_API_KEY_SECRET: ${TWILIO_API_KEY_SECRET}
-      TWILIO_CONVERSATIONS_SERVICE_SID: ${TWILIO_CONVERSATIONS_SERVICE_SID}
+      # KHÔNG có biến nào của Stream Chat ở đây, và đó là đúng: frontend nhận cả apiKey lẫn token
+      # từ backend qua GET /v1/api/chat/token (xem ChatTokenResponse), nên khoá không cần đi vòng
+      # qua biến môi trường của web-ui.
+      #
+      # Bốn biến TWILIO_* từng nằm ở đây đã được gỡ (28/08): chat chuyển sang Stream Chat từ lâu,
+      # frontend không còn phụ thuộc twilio trong package.json và mọi nhắc tới Twilio trong mã chỉ
+      # còn là chú thích giải thích cái đã bị thay. Truyền một secret không ai đọc là rủi ro thuần.
     restart: always
     networks:
       - app-network
@@ -344,20 +379,18 @@ services:
       retries: 5
       start_period: 15s
     ports:
-      # Port 9000 stays open on purpose, for now. The backend writes plain (unsigned) URLs of the
-      # form ${MINIO_URL}/profile-pictures/<key> straight into t_users.profile_picture_url, and
-      # signs book links against this same host — so browsers must be able to reach MinIO
-      # directly at exactly this address. Closing the port breaks every existing avatar.
+      # Từ 2026-08-31 MinIO đi qua Caddy tại files.elitenexus.id.vn (khối MINIO trong Caddyfile),
+      # và MINIO_PUBLIC_URL trong .env trỏ vào đó. Cổng 9000 GIỮ MỞ như đường dự phòng trong lúc
+      # chuyển đổi — nếu ảnh đại diện hoặc link tải sách hỏng qua hostname mới thì đổi tạm
+      # MINIO_PUBLIC_URL về http://3.105.195.84:9000 là quay lại được ngay.
       #
-      # Only the `profile-pictures` bucket is public-read (MinIOService#ensurePublicReadPolicy,
-      # called once from ProfileService); books and previews are private and served via presigned
-      # URLs. So what is exposed here is avatars, which are public in the product anyway — the
-      # part that was NOT acceptable was the published root credentials above.
+      # Đóng cổng này SAU KHI đã xác nhận qua hostname mới:
+      #   1. Mở một hồ sơ có ảnh đại diện — ảnh phải hiện (URL https://files.elitenexus.id.vn/...).
+      #   2. Mua thử rồi tải một cuốn sách — presigned URL phải tải được.
+      # rồi bỏ dòng "9000:9000" này và `docker compose -f docker-compose.prod.yml up -d minio caddy`.
       #
-      # Moving this behind Caddy needs a hostname, not a path: presigned URLs sign the host and
-      # full path, so a /files/* prefix would invalidate every signature. Do it together with the
-      # domain + TLS work, and rewrite existing t_users.profile_picture_url rows in the same pass.
-      # The console port (9001) is deliberately not published.
+      # Chỉ bucket `profile-pictures` và `post-media` là public-read (MinIOBucketInitializer); books
+      # và book-covers là private, phát qua presigned URL. Cổng console (9001) cố ý không publish.
       - "9000:9000"
     volumes:
       - minio_data:/data
