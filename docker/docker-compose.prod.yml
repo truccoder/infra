@@ -41,9 +41,14 @@ services:
     # thắng như cũ. Đã kiểm chứng bằng `caddy validate` ở cả ba trường hợp: rỗng, `:80`, domain.
     environment:
       PUBLIC_DOMAIN: "${PUBLIC_DOMAIN:-:80}"
-      # Chỉ dùng khi bỏ comment khối MinIO trong Caddyfile. Khai sẵn để lúc đó không vấp lại đúng
-      # cái bẫy vừa nói ở trên.
-      MINIO_PUBLIC_DOMAIN: ${MINIO_PUBLIC_DOMAIN:-}
+      # Khối MinIO trong Caddyfile ĐANG được bật (files.elitenexus.id.vn). Dòng `{$MINIO_PUBLIC_DOMAIN}`
+      # ở đó không có giá trị mặc định nào đỡ cho, nên một giá trị RỖNG làm dòng địa chỉ site rút lại
+      # còn ` {` và giết cả tiến trình Caddy — kéo sập luôn site chính.
+      #
+      # `:?` (khác `:-`) bắt Compose DỪNG với thông báo rõ ràng nếu biến chưa đặt hoặc rỗng, thay vì
+      # để container lên rồi Caddy chết trong vòng lặp restart. deploy.yml đã kiểm tra secret này ở
+      # nhóm bắt buộc; đây là lớp chặn thứ hai cho lần `docker compose up` chạy tay trên máy chủ.
+      MINIO_PUBLIC_DOMAIN: "${MINIO_PUBLIC_DOMAIN:?chua dat trong .env - khoi MinIO trong Caddyfile dang bat, bien rong se lam sap Caddy}"
     ports:
       - "80:80"
       - "443:443"
@@ -161,6 +166,15 @@ services:
       # MinIO must be reached at the SAME address the backend uses to sign presigned URLs,
       # because that address gets baked into t_users.profile_picture_url / t_books.cover_image_url
       # and served to real browsers — "minio" (Docker-internal DNS) would be unreachable from them.
+      #
+      # ⚠️ Từ khi giá trị này là https://files.elitenexus.id.vn (đi qua Caddy), backend đi ĐƯỜNG VÒNG
+      # qua Caddy để tới MinIO. MinIOBucketInitializer chạy ở ApplicationReadyEvent, và lúc đó Caddy
+      # có thể CHƯA lên (caddy `depends_on` backend `service_healthy`). Lần chạy đó sẽ log ERROR
+      # "Could not prepare MinIO bucket" và bỏ qua — KHÔNG làm backend chết, nhưng policy public-read
+      # của hai bucket ảnh cũng chưa được đặt. Sau lần deploy cắt domain ĐẦU TIÊN, chạy một lần:
+      #   docker compose -f docker-compose.prod.yml restart backend
+      # để initializer chạy lại khi Caddy đã sẵn sàng. Các lần deploy sau không cần (volume đã có
+      # bucket + policy). Xem docs/domain-cutover.md.
       MINIO_URL: ${MINIO_PUBLIC_URL}
       # The backend authenticates to MinIO as root, so these are the same two values the minio
       # service below is started with. They were literal defaults in this file until 2026-08-18 —
@@ -365,20 +379,18 @@ services:
       retries: 5
       start_period: 15s
     ports:
-      # Port 9000 stays open on purpose, for now. The backend writes plain (unsigned) URLs of the
-      # form ${MINIO_URL}/profile-pictures/<key> straight into t_users.profile_picture_url, and
-      # signs book links against this same host — so browsers must be able to reach MinIO
-      # directly at exactly this address. Closing the port breaks every existing avatar.
+      # Từ 2026-08-31 MinIO đi qua Caddy tại files.elitenexus.id.vn (khối MINIO trong Caddyfile),
+      # và MINIO_PUBLIC_URL trong .env trỏ vào đó. Cổng 9000 GIỮ MỞ như đường dự phòng trong lúc
+      # chuyển đổi — nếu ảnh đại diện hoặc link tải sách hỏng qua hostname mới thì đổi tạm
+      # MINIO_PUBLIC_URL về http://3.105.195.84:9000 là quay lại được ngay.
       #
-      # Only the `profile-pictures` bucket is public-read (MinIOService#ensurePublicReadPolicy,
-      # called once from ProfileService); books and previews are private and served via presigned
-      # URLs. So what is exposed here is avatars, which are public in the product anyway — the
-      # part that was NOT acceptable was the published root credentials above.
+      # Đóng cổng này SAU KHI đã xác nhận qua hostname mới:
+      #   1. Mở một hồ sơ có ảnh đại diện — ảnh phải hiện (URL https://files.elitenexus.id.vn/...).
+      #   2. Mua thử rồi tải một cuốn sách — presigned URL phải tải được.
+      # rồi bỏ dòng "9000:9000" này và `docker compose -f docker-compose.prod.yml up -d minio caddy`.
       #
-      # Moving this behind Caddy needs a hostname, not a path: presigned URLs sign the host and
-      # full path, so a /files/* prefix would invalidate every signature. Do it together with the
-      # domain + TLS work, and rewrite existing t_users.profile_picture_url rows in the same pass.
-      # The console port (9001) is deliberately not published.
+      # Chỉ bucket `profile-pictures` và `post-media` là public-read (MinIOBucketInitializer); books
+      # và book-covers là private, phát qua presigned URL. Cổng console (9001) cố ý không publish.
       - "9000:9000"
     volumes:
       - minio_data:/data

@@ -55,6 +55,11 @@ jobs:
             echo "PUBLIC_BASE_URL=${{ secrets.PUBLIC_BASE_URL }}" >> .env.tmp
             echo "PUBLIC_DOMAIN=${{ secrets.PUBLIC_DOMAIN }}" >> .env.tmp
             echo "MINIO_PUBLIC_URL=${{ secrets.MINIO_PUBLIC_URL }}" >> .env.tmp
+            # Hostname Caddy dùng cho khối reverse-proxy MinIO (files.elitenexus.id.vn). Khối đó
+            # trong Caddyfile ĐÃ được bỏ comment — một giá trị rỗng ở đây làm dòng địa chỉ site rút
+            # lại còn ` {` và giết cả tiến trình Caddy, kéo sập luôn site chính. Vì vậy biến này
+            # nằm ở nhóm BẮT BUỘC bên dưới: thiếu secret thì deploy dừng và .env cũ được giữ nguyên.
+            echo "MINIO_PUBLIC_DOMAIN=${{ secrets.MINIO_PUBLIC_DOMAIN }}" >> .env.tmp
 
             # Credential của hạ tầng. Tới 2026-08-18 chúng là giá trị mặc định ghi thẳng trong
             # docker-compose.prod.yml đã commit; giờ chỉ đến từ secrets.
@@ -131,12 +136,12 @@ jobs:
             # Danh sách dựng bằng phép nối chuỗi chứ không bằng dấu gạch chéo nối dòng: file này
             # nằm trong working tree Windows (core.autocrlf=true), và một dòng nối kết thúc bằng
             # CR sẽ làm shell trên máy chủ Linux báo lỗi cú pháp ngay giữa lúc deploy.
-            required="SPRING_PROFILES_ACTIVE PUBLIC_BASE_URL MINIO_PUBLIC_URL"
+            required="SPRING_PROFILES_ACTIVE PUBLIC_BASE_URL MINIO_PUBLIC_URL MINIO_PUBLIC_DOMAIN"
             required="$required MINIO_ROOT_USER MINIO_ROOT_PASSWORD NEO4J_PASSWORD"
             required="$required AXIOM_TOKEN AXIOM_DATASET DB_PASSWORD JWT_SECRET"
             required="$required MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD"
             required="$required GEMINI_API_KEY STREAM_API_KEY STREAM_API_SECRET"
-            required="$required GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET"
+            required="$required GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET PUBLIC_DOMAIN"
 
             # COLUMN_ENCRYPTION_KEY nằm ở nhóm BẮT BUỘC, không phải nhóm cảnh báo, và đó là một
             # quyết định — để trống thì backend vẫn lên, chỉ việc liên kết GitHub/Google trả 503.
@@ -176,8 +181,10 @@ jobs:
             # GITHUB_OAUTH_* CỐ Ý ở lại nhóm bắt buộc: đăng nhập bằng GitHub là luồng chính của sản
             # phẩm, và giờ đã có tên secret dùng được (GH_OAUTH_*) nên không còn lý do để trống.
             #
-            # PUBLIC_DOMAIN cố tình KHÔNG nằm ở đây: rỗng là trạng thái đang chạy có chủ ý, nên
-            # cảnh báo mỗi lần deploy chỉ dạy người đọc bỏ qua cảnh báo.
+            # PUBLIC_DOMAIN nằm ở nhóm BẮT BUỘC từ 2026-08-31: dự án đã chuyển hẳn sang domain
+            # elitenexus.id.vn + HTTPS. PUBLIC_BASE_URL là https://elitenexus.id.vn, nên một
+            # PUBLIC_DOMAIN rỗng để Caddy nghe cổng 80 HTTP thuần trong khi backend dựng link https
+            # và CORS chờ origin https — đăng nhập hỏng mà deploy vẫn xanh.
             optional="GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET"
             optional="$optional GOOGLE_CALENDAR_CLIENT_ID GOOGLE_CALENDAR_CLIENT_SECRET"
             optional="$optional ONESIGNAL_APP_ID ONESIGNAL_REST_API_KEY"
@@ -189,10 +196,6 @@ jobs:
                 echo "::warning::${v} rỗng — tính năng phụ thuộc vào nó sẽ không hoạt động."
               fi
             done
-
-            if [ -z "$(grep -m1 "^PUBLIC_DOMAIN=" .env.tmp | cut -d= -f2-)" ]; then
-              echo "::notice::PUBLIC_DOMAIN rỗng — Caddy nghe cổng 80 HTTP thuần, không có TLS."
-            fi
 
             if [ -n "$missing" ]; then
               echo "::error::Thiếu GitHub secret (giá trị rỗng):${missing}"

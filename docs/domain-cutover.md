@@ -1,22 +1,42 @@
 # Chuyển sang domain + HTTPS
 
-> **Trạng thái: chưa áp dụng.** Dự án đã quyết định (2026-08-18) giữ HTTP trên IP trần, không dùng
-> domain. Tài liệu này để dành cho lúc quyết định đó thay đổi — hạ tầng đã tham số hoá sẵn nên
-> không phải sửa lại 10 chỗ, chỉ điền hai biến rồi làm theo thứ tự dưới đây.
+> **Trạng thái: đã áp dụng (2026-08-31).** Deployment chạy trên VPS `3.105.195.84` với domain
+> `elitenexus.id.vn` + HTTPS (Caddy tự cấp Let's Encrypt), và MinIO sau proxy tại
+> `files.elitenexus.id.vn`. Các giá trị thật đến từ GitHub Secrets — xem "Secrets phải đặt" bên
+> dưới. Tài liệu này giữ lại làm runbook cho lần cắt domain kế tiếp và cho việc quay lui.
+>
+> VPS trước đó: `14.225.217.4` (HTTP thuần, quyết định 2026-08-18, nay đã bỏ). Các hàng URL ảnh
+> trong database vẫn còn trỏ về IP đó cho tới khi chạy bước viết lại ở dưới.
 
-Hiện deployment chạy HTTP thuần trên IP trần `14.225.217.4`. Nghĩa là JWT, mật khẩu đăng nhập và
-authorization code của OAuth đi qua mạng ở dạng đọc được.
+Trước khi cắt sang domain, deployment chạy HTTP thuần trên IP trần. Nghĩa là JWT, mật khẩu đăng
+nhập và authorization code của OAuth đi qua mạng ở dạng đọc được — đó là lý do phải chuyển.
 
 Một hệ quả đáng chú ý của việc không có domain: **chính sách OAuth của Google yêu cầu redirect URI
 dùng `https://`, chỉ miễn trừ cho `http://localhost`.** Một URI dạng
-`http://14.225.217.4/oauth/google/callback` thường bị Google Cloud Console từ chối khi đăng ký mới.
-Nếu đăng nhập bằng Google đang không hoạt động trên deployment này, đó nhiều khả năng là nguyên
-nhân, và cách sửa duy nhất là có domain + HTTPS. GitHub cho phép `http://` nên không vướng.
+`http://3.105.195.84/oauth/google/callback` thường bị Google Cloud Console từ chối khi đăng ký mới.
+Có domain + HTTPS là cách duy nhất để đăng nhập bằng Google chạy được. GitHub cho phép `http://`
+nên không vướng.
 
-Toàn bộ hạ tầng đã được tham số hoá sẵn cho việc chuyển đổi này — không còn chỗ nào ghi cứng IP.
+Toàn bộ hạ tầng đã được tham số hoá — không còn chỗ nào ghi cứng IP.
 Việc còn lại là một quy trình có thứ tự, và **thứ tự là phần quan trọng nhất**: làm sai thứ tự thì
 Caddy xin chứng chỉ thất bại rồi vào vòng lặp thử lại, hoặc người dùng nhận được link đặt lại mật
 khẩu trỏ về địa chỉ không còn phục vụ.
+
+## Secrets phải đặt (cả 3 repo hoặc riêng infra)
+
+Trong repo **infra** (Settings → Secrets and variables → Actions):
+
+| Secret | Giá trị |
+|---|---|
+| `SERVER_IP` | `3.105.195.84` |
+| `SERVER_PASSWORD` | mật khẩu VPS mới |
+| `PUBLIC_BASE_URL` | `https://elitenexus.id.vn` |
+| `PUBLIC_DOMAIN` | `elitenexus.id.vn` |
+| `MINIO_PUBLIC_URL` | `https://files.elitenexus.id.vn` |
+| `MINIO_PUBLIC_DOMAIN` | `files.elitenexus.id.vn` |
+
+Trong repo **backend** và **web-ui**: cập nhật `SERVER_IP` = `3.105.195.84` và `SERVER_PASSWORD`.
+`NEXT_PUBLIC_API_URL` của web-ui để TRỐNG (frontend gọi API cùng origin qua Caddy) — không đổi.
 
 ## Việc phải làm trước
 
@@ -32,7 +52,7 @@ khẩu trỏ về địa chỉ không còn phục vụ.
 Tạo bản ghi A trỏ domain về IP máy chủ, rồi **đợi cho tới khi phân giải được**:
 
 ```bash
-dig +short socialapp.example.com
+dig +short elitenexus.id.vn
 ```
 
 Phải trả về đúng IP máy chủ. Chưa đúng thì dừng ở đây. Caddy xin chứng chỉ bằng thử thách HTTP:
@@ -47,45 +67,56 @@ vẫn giữ bản HTTP cũ, thì trong lúc chuyển đổi không có khoảnh 
 Google Cloud Console → Credentials → OAuth 2.0 Client ID, thêm:
 
 ```
-https://socialapp.example.com/oauth/google/callback
-https://socialapp.example.com/v1/api/events/google/callback
+https://elitenexus.id.vn/oauth/google/callback
+https://elitenexus.id.vn/v1/api/events/google/callback
 ```
 
 GitHub → Settings → Developer settings → OAuth Apps, thêm:
 
 ```
-https://socialapp.example.com/oauth/github/callback
-https://socialapp.example.com/settings/github/callback
+https://elitenexus.id.vn/oauth/github/callback
+https://elitenexus.id.vn/settings/github/callback
 ```
 
 Hai đường dẫn GitHub phải là hai đường KHÁC NHAU. Một cái cho đăng nhập, một cái cho liên kết tài
 khoản đã đăng nhập — code của GitHub chỉ dùng được một lần, nên dùng chung một callback thì luồng
 đăng nhập tiêu mất code mà luồng liên kết đang cần (đây là lỗi B23a đã từng gặp).
 
-### 3. Đổi cấu hình trên máy chủ
+### 3. Đổi cấu hình
 
-Sửa `/opt/socialapp/.env`:
+**Đường chuẩn:** đặt/cập nhật các secret ở bảng "Secrets phải đặt" trong repo infra, rồi chạy
+workflow **Deploy Infra Config** (Actions → Run workflow). Workflow dựng lại `/opt/socialapp/.env`
+từ secrets, upload `docker-compose.prod.yml` + `Caddyfile` mới (đã bật khối MinIO), rồi
+`docker compose up -d`. Bước kiểm tra cổng 80 ở cuối workflow phải xanh.
 
-```
-PUBLIC_BASE_URL=https://socialapp.example.com
-PUBLIC_DOMAIN=socialapp.example.com
-```
+`MINIO_PUBLIC_DOMAIN` giờ nằm ở nhóm secret BẮT BUỘC của workflow — thiếu nó thì deploy dừng và
+`.env` cũ được giữ nguyên (khối MinIO trong Caddyfile đã bật, một giá trị rỗng sẽ làm sập Caddy).
 
-Rồi áp dụng:
+**Trên máy chủ (nếu sửa tay):**
 
 ```bash
 cd /opt/socialapp
+# .env phải có cả 4: PUBLIC_BASE_URL, PUBLIC_DOMAIN, MINIO_PUBLIC_URL, MINIO_PUBLIC_DOMAIN
 docker compose -f docker-compose.prod.yml up -d caddy backend
 docker compose -f docker-compose.prod.yml logs -f caddy
 ```
 
-Nhật ký của Caddy phải hiện việc lấy chứng chỉ thành công. Lần đầu mất khoảng vài chục giây.
+Nhật ký của Caddy phải hiện việc lấy chứng chỉ thành công cho **cả** `elitenexus.id.vn` lẫn
+`files.elitenexus.id.vn`. Lần đầu mất khoảng vài chục giây.
+
+Sau lần cắt domain đầu tiên, chạy một lần để MinIOBucketInitializer đặt lại policy public-read khi
+Caddy đã sẵn sàng (lần chạy lúc backend khởi động thất bại vì Caddy chưa lên — chỉ log ERROR, không
+fatal):
+
+```bash
+docker compose -f docker-compose.prod.yml restart backend
+```
 
 ### 4. Kiểm tra
 
 ```bash
-curl -I https://socialapp.example.com/v1/api/posts/public   # 200, và có chứng chỉ hợp lệ
-curl -I http://socialapp.example.com                        # 308, chuyển hướng sang https
+curl -I https://elitenexus.id.vn/v1/api/posts/public   # 200, và có chứng chỉ hợp lệ
+curl -I http://elitenexus.id.vn                        # 308, chuyển hướng sang https
 ```
 
 Kiểm tra thêm bằng tay, vì đây là những thứ curl không thấy:
@@ -95,47 +126,49 @@ Kiểm tra thêm bằng tay, vì đây là những thứ curl không thấy:
 
 ### 5. Dọn redirect URI cũ
 
-Sau khi mọi thứ chạy ổn định vài ngày, xoá các redirect URI `http://14.225.217.4/...` khỏi console
+Sau khi mọi thứ chạy ổn định vài ngày, xoá các redirect URI `http://3.105.195.84/...` khỏi console
 Google và GitHub. Để lại là giữ một đường vào qua HTTP thuần mà không ai để ý.
 
 ---
 
-## Bước tuỳ chọn: đưa MinIO ra sau proxy
+## MinIO sau proxy (đã bật trong lần cắt domain này)
 
-Việc này **không bắt buộc** để có HTTPS, và nên làm thành một lần riêng sau khi domain đã ổn định.
-
-Hiện MinIO publish thẳng cổng 9000. Chỉ bucket `profile-pictures` là public-read (ảnh đại diện,
-vốn đã công khai trong sản phẩm); sách và ảnh bìa là private, phát qua presigned URL. Nên việc mở
-cổng này không phải lỗ hổng — nhưng nó là một cổng HTTP thuần còn sót lại sau khi phần còn lại đã
-lên HTTPS.
+Khối MinIO trong `docker/Caddyfile` đã được bỏ comment: MinIO phục vụ qua `files.elitenexus.id.vn`
+thay vì cổng 9000 trần. Lý do phải làm cùng lúc với domain: trang chạy HTTPS, mà trình duyệt chặn
+ảnh `http://` trên trang `https://` (mixed content) — để MinIO ở `http://<ip>:9000` là ảnh đại diện
+vỡ hết.
 
 **Bắt buộc dùng hostname riêng, không dùng đường dẫn con.** Presigned URL ký trên cả host lẫn
 đường dẫn đầy đủ, nên thêm tiền tố `/files` là hỏng toàn bộ chữ ký, và link tải sách chết hết.
 
-1. Thêm bản ghi A cho `files.socialapp.example.com` trỏ về cùng IP.
-2. Bỏ comment khối MinIO trong `docker/Caddyfile`, và đặt trong `.env`:
-   ```
-   MINIO_PUBLIC_DOMAIN=files.socialapp.example.com
-   MINIO_PUBLIC_URL=https://files.socialapp.example.com
-   ```
-3. **Viết lại URL ảnh đại diện đã lưu trong database.** Đây là bước hay bị quên, và bỏ qua nó thì
-   ảnh đại diện của mọi người dùng cũ thành ảnh vỡ — server không báo lỗi gì, vì server không phải
-   bên đi tải ảnh:
+1. Thêm bản ghi A cho `files.elitenexus.id.vn` trỏ về `3.105.195.84` (cùng lúc với bản ghi cho
+   `elitenexus.id.vn` ở bước 1).
+2. Đặt secret `MINIO_PUBLIC_DOMAIN=files.elitenexus.id.vn` và `MINIO_PUBLIC_URL=https://files.elitenexus.id.vn`.
+   Khối MinIO trong Caddyfile đã bật sẵn trong repo; workflow deploy ghi hai biến này vào `.env`.
+3. **Viết lại URL ảnh đã lưu trong database** (3 cột: `t_users.profile_picture_url`,
+   `t_users.cover_image_url`, `t_posts.images`). Bỏ qua bước này thì ảnh của mọi người dùng cũ
+   thành ảnh vỡ — server không báo lỗi gì, vì server không phải bên đi tải ảnh. `old_url` là địa
+   chỉ MinIO của VPS CŨ mà các hàng hiện đang trỏ tới:
    ```bash
    psql "<chuỗi kết nối Supabase>" \
      -v old_url="'http://14.225.217.4:9000'" \
-     -v new_url="'https://files.socialapp.example.com'" \
+     -v new_url="'https://files.elitenexus.id.vn'" \
      -f scripts/rewrite-minio-urls.sql
    ```
    Script chạy trong transaction, in ra số hàng sẽ đổi và vài ví dụ trước khi commit.
-4. Bỏ `ports: - "9000:9000"` khỏi service `minio` trong compose, rồi `up -d minio caddy`.
-5. Kiểm tra: mở một hồ sơ có ảnh đại diện, và bấm tải thử một cuốn sách đã mua.
+4. Xác nhận ảnh đại diện hiện được và link tải sách chạy qua hostname mới, rồi mới bỏ
+   `ports: - "9000:9000"` khỏi service `minio` trong compose và `up -d minio caddy`. Cho tới lúc đó
+   cổng 9000 giữ mở làm đường quay lui nhanh.
 
 ---
 
 ## Nếu phải quay lui
 
-Đổi `PUBLIC_BASE_URL` và `PUBLIC_DOMAIN` trong `.env` về giá trị cũ rồi `up -d caddy backend`.
-Redirect URI cũ vẫn còn đăng ký (nếu chưa làm bước 5), nên OAuth vẫn chạy. Chứng chỉ đã cấp không
-mất đi đâu — bật lại domain sau đó Caddy dùng lại chứng chỉ trong volume `caddy_data`, không phải
-xin mới.
+- **Ảnh MinIO hỏng qua hostname mới:** đổi `MINIO_PUBLIC_URL` về `http://3.105.195.84:9000` (cổng
+  9000 vẫn mở), chạy lại `rewrite-minio-urls.sql` theo chiều ngược, `up -d backend`. Trang chính
+  vẫn HTTPS; chỉ ảnh về HTTP tạm thời.
+- **Toàn bộ domain:** đổi `PUBLIC_BASE_URL` và `PUBLIC_DOMAIN` về giá trị cũ, comment lại khối MinIO
+  trong `Caddyfile` (hoặc gỡ secret `MINIO_PUBLIC_DOMAIN` — nhưng lúc đó phải comment khối, không
+  thì Caddy sập), rồi `up -d caddy backend`. Redirect URI cũ vẫn còn đăng ký (nếu chưa làm bước 5)
+  nên OAuth vẫn chạy. Chứng chỉ đã cấp nằm trong volume `caddy_data` — bật lại domain sau đó Caddy
+  dùng lại, không xin mới.

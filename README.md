@@ -1,6 +1,10 @@
-# SocialApp Infrastructure — Vietnix VPS
+# SocialApp Infrastructure
 
-Deploy backend (Spring Boot) + web-ui (Next.js) lên Vietnix VPS.
+Deploy backend (Spring Boot) + web-ui (Next.js).
+
+**Production hiện tại:** VPS `3.105.195.84`, domain `https://elitenexus.id.vn` (HTTPS qua Caddy +
+Let's Encrypt), MinIO sau proxy tại `files.elitenexus.id.vn`. Quy trình cắt domain / quay lui:
+`docs/domain-cutover.md`.
 
 ## Architecture
 
@@ -47,16 +51,22 @@ Thêm vào **cả 3 repo** (backend, web-ui, infra):
 
 | Secret | Giá trị |
 |---|---|
-| `SERVER_IP` | IP từ email Vietnix |
+| `SERVER_IP` | `3.105.195.84` |
 | `SERVER_USER` | `root` |
-| `SERVER_PASSWORD` | Password từ email Vietnix |
+| `SERVER_PASSWORD` | Password của VPS |
 | `GHCR_TOKEN` | GitHub PAT từ Step 2 |
 
-Thêm riêng cho **web-ui**:
+Riêng repo **infra** cần thêm (xem `docker/.env.example` cho danh sách đầy đủ):
 
 | Secret | Giá trị |
 |---|---|
-| `NEXT_PUBLIC_API_URL` | `http://<SERVER_IP>` |
+| `PUBLIC_BASE_URL` | `https://elitenexus.id.vn` |
+| `PUBLIC_DOMAIN` | `elitenexus.id.vn` |
+| `MINIO_PUBLIC_URL` | `https://files.elitenexus.id.vn` |
+| `MINIO_PUBLIC_DOMAIN` | `files.elitenexus.id.vn` |
+
+Web-ui **không** cần `NEXT_PUBLIC_API_URL` — frontend gọi API cùng origin qua Caddy (`/v1/*`), nên
+build-arg đó để trống trong `.github/workflows/deploy.yml` của repo web-ui.
 
 ### 4. Deploy
 
@@ -70,7 +80,13 @@ Hoặc trigger thủ công: Actions → Deploy → Run workflow
 
 ### 5. Verify
 
-Mở browser: `http://<SERVER_IP>`
+Mở browser: `https://elitenexus.id.vn`
+
+```bash
+dig +short elitenexus.id.vn          # -> 3.105.195.84
+dig +short files.elitenexus.id.vn    # -> 3.105.195.84
+curl -I https://elitenexus.id.vn/v1/api/posts/public   # 200, chứng chỉ hợp lệ
+```
 
 ---
 
@@ -115,8 +131,8 @@ docker compose -f docker-compose.prod.yml restart backend  # restart 1 service
 
 ---
 
-## Nếu có Domain
+## Domain + HTTPS
 
-1. Edit `docker/Caddyfile` — thay `:80` bằng domain name
-2. Trỏ DNS A record về Server IP
-3. Push lên main → CI/CD tự deploy (Caddy tự cấp HTTPS)
+Đã áp dụng — `elitenexus.id.vn` + `files.elitenexus.id.vn`. Địa chỉ site của Caddy và mọi URL
+người dùng thấy đều dựng từ secrets (`PUBLIC_DOMAIN`, `PUBLIC_BASE_URL`, `MINIO_PUBLIC_*`), không
+ghi cứng trong file nào. Đổi domain hoặc VPS, và cách quay lui: **`docs/domain-cutover.md`**.
