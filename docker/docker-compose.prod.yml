@@ -52,6 +52,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Caddy phải gọi ra ngoài để xin/gia hạn cert Let's Encrypt (acme-v02.api.letsencrypt.org).
+    # Nếu /etc/resolv.conf mà Docker cấp cho container trỏ vào stub resolver của systemd-resolved
+    # trên host (127.0.0.53:53) thì bên trong container không có gì lắng nghe ở đó — mọi lần lookup
+    # ra "connection refused" và Caddy không lấy được cert nào, kể cả cho site chính. Ghim resolver
+    # công cộng ở đây để việc xin cert không phụ thuộc cấu hình DNS của host. Sự cố 2026-08-31.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
