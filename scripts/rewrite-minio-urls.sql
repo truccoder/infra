@@ -23,6 +23,13 @@
 -- Sách thì KHÔNG cần: t_books lưu object key chứ không lưu URL (đổi ở V44) và backend ký lại link
 -- mỗi lần đọc, nên chúng tự bám theo cấu hình mới.
 --
+--     t_users.profile_picture_url   ProfileService
+--     t_users.cover_image_url       ProfileService — cột thêm ở V68
+--     t_posts.images                MediaService — MẢNG jsonb các URL tuyệt đối
+--
+-- Sách thì KHÔNG cần: t_books lưu object key chứ không lưu URL (đổi ở V44) và backend ký lại link
+-- mỗi lần đọc, nên chúng tự bám theo cấu hình mới.
+--
 -- CÁCH CHẠY (cắt sang domain elitenexus.id.vn, 2026-08-31 — các hàng cũ trỏ về IP VPS trước đó):
 --   psql "<chuỗi kết nối Supabase>" \
 --     -v old_url="'http://14.225.217.4:9000'" \
