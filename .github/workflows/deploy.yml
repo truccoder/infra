@@ -15,11 +15,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Xác thực SSH bằng khoá: VPS 3.105.195.84 là EC2, password auth tắt mặc định, đăng nhập
+      # bằng file .pem. `password` để lại làm dự phòng — appleboy thử `key` trước rồi mới tới nó.
+      # Secret phải có trên repo: SERVER_IP, SERVER_USER (ubuntu / ec2-user), SERVER_SSH_KEY (dán
+      # nguyên nội dung file .pem, gồm cả dòng -----BEGIN/END-----). Thiếu SERVER_SSH_KEY (và
+      # SERVER_PASSWORD) thì appleboy không có phương thức nào để thử: "unable to authenticate,
+      # attempted methods [none]".
       - name: Install Docker on server (first run only)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             if ! command -v docker &> /dev/null; then
@@ -34,6 +41,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD }}
           source: "docker/docker-compose.prod.yml,docker/Caddyfile"
           target: /opt/socialapp
@@ -44,6 +52,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             cd /opt/socialapp

@@ -25,6 +25,21 @@
 # Việc bảo đảm biến luôn có giá trị hợp lệ nằm ở docker-compose.prod.yml (`${PUBLIC_DOMAIN:-:80}`,
 # vì `:-` của Compose coi rỗng như chưa đặt) — đừng đổi nó về `${PUBLIC_DOMAIN:-}`.
 {$PUBLIC_DOMAIN::80} {
+	# HSTS — chốt trình duyệt vào HTTPS suốt max-age giây kể từ lần ghé gần nhất. CHỈ bật khi
+	# chắc chắn domain này không bao giờ quay lại HTTP: một khi header đã gửi, trình duyệt từ
+	# chối mọi kết nối http:// tới đây cho tới khi hết hạn, kể cả lúc TLS thật sự trục trặc.
+	#
+	# Vì sao đặt ở Caddy chứ không ở Spring Security: Caddy là nơi terminate TLS và là ingress
+	# duy nhất; backend chạy sau nó bằng HTTP thuần, cố ý không biết gì về HTTPS (xem
+	# application-prod.yml). Một dòng ở đây phủ MỌI response — HTML của Next.js, /v1/* của
+	# backend, asset tĩnh; còn HttpSecurity.headers() của Spring chỉ chạm tới response do backend
+	# sinh ra. includeSubDomains kéo theo cả files.<domain> (block dưới), vốn luôn HTTPS.
+	#
+	# Matcher @https để header KHÔNG lòi ra khi PUBLIC_DOMAIN rỗng/`:80` — lúc đó block này là
+	# server HTTP thuần. Cố ý KHÔNG đặt HSTS ở block {$MINIO_PUBLIC_DOMAIN}.
+	@https protocol https
+	header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
 	handle /v1/* {
 		reverse_proxy backend:8080
 	}
