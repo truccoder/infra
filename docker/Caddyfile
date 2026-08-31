@@ -1,22 +1,16 @@
-# Địa chỉ site lấy từ biến môi trường PUBLIC_DOMAIN (đặt trong docker/.env).
+# Địa chỉ site lấy từ biến môi trường PUBLIC_DOMAIN (deploy.yml ghi vào .env từ GitHub Secrets).
 #
-#   chưa có domain:  để trống  ->  mặc định `:80`, chạy HTTP thuần đúng như hiện tại
-#   có domain:       PUBLIC_DOMAIN=socialapp.example.com
-#                    -> Caddy tự xin chứng chỉ Let's Encrypt, bật HTTPS, tự gia hạn, và tự
-#                       chuyển hướng HTTP sang HTTPS
+#   PUBLIC_DOMAIN=elitenexus.id.vn   (trạng thái hiện tại)
+#     -> Caddy tự xin chứng chỉ Let's Encrypt, bật HTTPS, tự gia hạn, tự chuyển HTTP sang HTTPS.
+#   để trống -> mặc định `:80`, HTTP thuần.
 #
-# Trước đây file này có sẵn một khối domain nằm dạng comment để "bỏ comment khi có domain". Cách
-# đó nghĩa là hai bản định tuyến song song tồn tại, và bản đang bị comment sẽ lặng lẽ lạc hậu mỗi
-# lần ai đó sửa bản đang chạy. Giờ chỉ còn một khối, khác nhau đúng ở địa chỉ site.
-#
-# ⚠️ Chuyển sang domain KHÔNG chỉ là đổi biến này. Phải làm cùng lúc:
-#   1. Trỏ bản ghi DNS A của domain về IP máy chủ và đợi phân giải được — Caddy xin chứng chỉ
-#      bằng thử thách HTTP, sẽ thất bại nếu DNS chưa trỏ về đây.
+# ⚠️ Đổi domain KHÔNG chỉ là đổi biến này. Phải làm cùng lúc:
+#   1. Trỏ DNS A của domain (và của MINIO_PUBLIC_DOMAIN) về IP máy chủ, đợi phân giải được —
+#      Caddy xin chứng chỉ bằng thử thách HTTP, thất bại nếu DNS chưa trỏ về đây.
 #   2. Mở cổng 443 trên tường lửa. Cổng 80 VẪN phải mở, ACME dùng nó để xác thực.
-#   3. Đổi PUBLIC_BASE_URL trong .env sang https://<domain>. Quên bước này thì link đặt lại mật
-#      khẩu và link xác thực email gửi cho người dùng vẫn trỏ về IP cũ qua HTTP.
+#   3. Đổi PUBLIC_BASE_URL (secret) sang https://<domain>, nếu không link đặt lại mật khẩu /
+#      xác thực email gửi cho người dùng vẫn trỏ về địa chỉ cũ.
 #   4. Đăng ký lại redirect URI trong console Google và GitHub, khớp từng ký tự.
-# Thứ tự đầy đủ nằm ở docs/domain-cutover.md.
 #
 # ⚠️ DÒNG ĐỊA CHỈ SITE DƯỚI ĐÂY KHÔNG BAO GIỜ ĐƯỢC NỞ RA THÀNH CHUỖI RỖNG.
 #

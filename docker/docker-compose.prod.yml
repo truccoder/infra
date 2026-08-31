@@ -174,12 +174,12 @@ services:
       # của hai bucket ảnh cũng chưa được đặt. Sau lần deploy cắt domain ĐẦU TIÊN, chạy một lần:
       #   docker compose -f docker-compose.prod.yml restart backend
       # để initializer chạy lại khi Caddy đã sẵn sàng. Các lần deploy sau không cần (volume đã có
-      # bucket + policy). Xem docs/domain-cutover.md.
+      # bucket + policy).
       MINIO_URL: ${MINIO_PUBLIC_URL}
       # The backend authenticates to MinIO as root, so these are the same two values the minio
       # service below is started with. They were literal defaults in this file until 2026-08-18 —
       # published credentials on a port open to the internet, i.e. read/write/delete on every
-      # avatar, book cover and preview file. Now .env-only; see .env.example.
+      # avatar, book cover and preview file. Now .env-only (deploy.yml ghi từ GitHub Secrets).
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       # OAuth / Google Calendar. The callback the *browser* is redirected to lives on the
@@ -210,8 +210,8 @@ services:
       # so the backend needs the real credentials — an empty key makes chat unusable.
       STREAM_API_KEY: ${STREAM_API_KEY}
       STREAM_API_SECRET: ${STREAM_API_SECRET}
-      # Push notification (OneSignal). Bị BỎ SÓT hoàn toàn cho tới 2026-08-22: không có ở đây,
-      # ở .env.example, lẫn ở deploy.yml, nên application.yml rơi về default rỗng.
+      # Push notification (OneSignal). Bị BỎ SÓT hoàn toàn cho tới 2026-08-22: không có ở đây
+      # lẫn ở deploy.yml, nên application.yml rơi về default rỗng.
       #
       # Cách hỏng rất khó thấy: PushNotificationService dựng WebClient với header
       # `Authorization: Basic null` rồi gọi Map.of("app_id", null, ...) — NPE, nhưng nằm trong

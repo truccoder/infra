@@ -35,7 +35,7 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          source: "docker/docker-compose.prod.yml,docker/Caddyfile,scripts/backup.sh,scripts/rewrite-minio-urls.sql"
+          source: "docker/docker-compose.prod.yml,docker/Caddyfile"
           target: /opt/socialapp
           strip_components: 1
 
@@ -51,7 +51,9 @@ jobs:
             echo "SPRING_PROFILES_ACTIVE=${{ secrets.SPRING_PROFILES_ACTIVE }}" > .env.tmp
 
             # Địa chỉ công khai. Mọi URL người dùng nhìn thấy (link đặt lại mật khẩu, CORS,
-            # redirect URI của OAuth) đều dựng từ đây — xem docker/.env.example.
+            # redirect URI của OAuth) đều dựng từ đây.
+            #   PUBLIC_BASE_URL=https://elitenexus.id.vn   PUBLIC_DOMAIN=elitenexus.id.vn
+            #   MINIO_PUBLIC_URL=https://files.elitenexus.id.vn   MINIO_PUBLIC_DOMAIN=files.elitenexus.id.vn
             echo "PUBLIC_BASE_URL=${{ secrets.PUBLIC_BASE_URL }}" >> .env.tmp
             echo "PUBLIC_DOMAIN=${{ secrets.PUBLIC_DOMAIN }}" >> .env.tmp
             echo "MINIO_PUBLIC_URL=${{ secrets.MINIO_PUBLIC_URL }}" >> .env.tmp

@@ -1,6 +1,6 @@
 .DS_Store
 .idea/
-# Chứa credential thật của deployment — chỉ tồn tại trên server, không bao giờ commit.
-# Mẫu các biến cần đặt: docker/.env.example
+# Chứa credential thật của deployment — chỉ tồn tại trên server, dựng từ GitHub Secrets bởi
+# .github/workflows/deploy.yml. Không bao giờ commit.
 .env
 **/.env
