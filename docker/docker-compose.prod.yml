@@ -245,17 +245,16 @@ services:
       MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-F8BBA842ECF85}
       MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-K951B6PE1waDMi640xX08PD3vg6EkVlz}
       MOMO_API_URL: ${MOMO_API_URL:-https://test-payment.momo.vn}
-      # BẮT BUỘC ĐẶT, và mặc định ở đây cố ý KHÁC mặc định của repo backend.
+      # Luồng MoMo hiển thị cho người mua. Đặt `payWithATM` (màn hình nhập thẻ) theo yêu cầu demo
+      # trên VPS — trùng mặc định của repo backend (application.yml).
       #
-      # application.yml của backend để `payWithATM` — màn hình nhập thẻ, chọn vì dễ quay video lúc
-      # demo. Trên sandbox, luồng thẻ đậu ở resultCode 7002 vĩnh viễn và KHÔNG BAO GIỜ tự settle;
-      # thứ gỡ được nó là POST /v1/api/payments/{ref}/dev-settle, mà endpoint đó mang @Profile("dev")
-      # nên không tồn tại ở đây.
-      #
-      # Hệ quả nếu để trống dòng này: đơn hàng vẫn tạo được, người mua vẫn được chuyển sang MoMo,
-      # và trạng thái đứng nguyên PENDING mãi mãi. Không log lỗi, không mã lỗi — MomoService coi
-      # 7002 là "đang bay" và giữ nguyên PENDING, đó là hành vi đúng của nó.
-      MOMO_REQUEST_TYPE: ${MOMO_REQUEST_TYPE:-captureWallet}
+      # ⚠️ Đánh đổi: trên sandbox MoMo (MOMO_API_URL vẫn là test-payment.momo.vn) luồng thẻ đậu ở
+      # resultCode 7002 và KHÔNG BAO GIỜ tự settle — đơn tạo được, người mua vẫn được chuyển sang
+      # MoMo, rồi trạng thái đứng nguyên PENDING mãi mãi (MomoService coi 7002 là "đang bay", không
+      # log lỗi, không mã lỗi). POST /v1/api/payments/{ref}/dev-settle gỡ được nhưng mang
+      # @Profile("dev") nên không tồn tại ở đây. Đổi lại `captureWallet` (ví/QR — giá trị duy nhất
+      # đo được settle trên sandbox) nếu cần luồng mua chạy trọn vẹn tới COMPLETED.
+      MOMO_REQUEST_TYPE: ${MOMO_REQUEST_TYPE:-payWithATM}
       MOMO_REDIRECT_URL: ${PUBLIC_BASE_URL}/payment/success
       MOMO_IPN_URL: ${PUBLIC_BASE_URL}/v1/api/payments/momo/webhook
     depends_on:
